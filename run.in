@@ -112,6 +112,13 @@ then
 		$cl_nonce $cl_pse \
 		$flag_linkable $flag_debug $flag_verbose \
 		"$@"
+elif [ "$PROG" = "run-isv" ]
+then
+	./client \
+		-s $SPID \
+		$cl_nonce $cl_pse \
+		$flag_linkable $flag_debug $flag_verbose \
+		"$@"
 elif [ "$PROG" = "run-server" ]
 then
 	./sp \
@@ -122,6 +129,16 @@ then
 		$flag_linkable $sp_strict_trust $flag_debug $flag_verbose \
                 $sp_production \
 		"$@" 
+elif [ "$PROG" = "run-sp" ]
+then
+	./sp \
+		-s $SPID \
+		-A "$IAS_REPORT_SIGNING_CA_FILE" \
+		-C "$IAS_CLIENT_CERT_FILE" \
+		$sp_cert_key $sp_noproxy $sp_proxy $sp_cert_passwd $sp_cert_type \
+		$flag_linkable $sp_strict_trust $flag_debug $flag_verbose \
+                $sp_production \
+		"$@"
 else
 	echo "$PROG: unrecognized instance (expected run-client or run-server)" >&2
 	exit 1

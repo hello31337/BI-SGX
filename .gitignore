@@ -9,3 +9,4 @@ public
 settings.*
 win32/agent_win32.cpp
 win32/agent_win32.h
+backup/

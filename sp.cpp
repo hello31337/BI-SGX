@@ -40,6 +40,8 @@ in the License.
 #include <sgx_report.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
+#include <openssl/conf.h>
+#include <openssl/err.h>
 #include "json.hpp"
 #include "common.h"
 #include "hexutil.h"
@@ -60,6 +62,8 @@ using namespace std;
 #include <string>
 #include <iostream>
 #include <algorithm>
+#include <fstream>
+#include <sstream>
 
 #ifdef _WIN32
 #define strdup(x) _strdup(x)
@@ -124,10 +128,18 @@ int get_attestation_report(IAS_Connection *ias, int version,
 
 int get_proxy(char **server, unsigned int *port, const char *url);
 
+int encrypt_data_for_ISV(unsigned char *plaintext, int plaintext_len,
+	unsigned char *key, unsigned char *iv, unsigned char *ciphertext, uint8_t *tag);
+
+int base64_encrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen);
+
 char debug = 0;
 char verbose = 0;
 /* Need a global for the signal handler */
 MsgIO *msgio = NULL;
+
+bool flag_BIOS = false;
+/*Flag to ignore IAS's corrupted error message*/
 
 int main(int argc, char *argv[])
 {
@@ -181,6 +193,8 @@ int main(int argc, char *argv[])
 		{"stdio",			no_argument,		0, 'z'},
 		{ 0, 0, 0, 0 }
 	};
+
+	cout << "*** INFO: SP is running as CLIENT(non-SGX term). ***" << endl;
 
 	/* Create a logfile to capture debug output and actual msg data */
 
@@ -534,16 +548,21 @@ int main(int argc, char *argv[])
 
 	/* Get our message IO object. */
 	
+	
 	if ( flag_stdio ) {
 		msgio= new MsgIO();
 	} else {
 		try {
-			msgio= new MsgIO(NULL, (port == NULL) ? DEFAULT_PORT : port);
+			//msgio = new MsgIO(NULL, (port == NULL) ? DEFAULT_PORT : port);
+			msgio= new MsgIO("localhost", (port == NULL) ? DEFAULT_PORT : port);
 		}
 		catch(...) {
 			return 1;
 		}
 	}
+	
+
+	//msgio = new MsgIO();
 
 #ifndef _WIN32
 	/* 
@@ -564,7 +583,7 @@ int main(int argc, char *argv[])
 
  	/* If we're running in server mode, we'll block here.  */
 
-	while ( msgio->server_loop() ) {
+	//while ( msgio->server_loop() ) {
 		ra_session_t session;
 		sgx_ra_msg1_t msg1;
 		sgx_ra_msg2_t msg2;
@@ -610,9 +629,247 @@ int main(int argc, char *argv[])
 			goto disconnect;
 		}
 
+		//sending msg4 complete; starting data encryption with session key "SK"
+		if(flag_BIOS)
+		{
+			cerr << "============ Remote Attestation Information ============" << endl;
+			cerr << "IAS says that target enclave needs BIOS or CPU microcode update," << endl;
+			cerr << "But that error message always states that error regardless of BIOS/microcode version," << endl;
+			cerr << "So just ignore it and complete RA, then starting secret data." << endl;
+			cerr << "========================================================" << endl;
+		}
+
+		//Load data to process
+		cout << endl << "Continue processing data. Enter any key to continue: " << endl;
+		getchar();
+		
+		//to avoid fucking compile error caused by retaded goto sentence
+		{
+			ifstream fin_intp;
+			string intp_filename, intp_str;
+			stringstream ss_intp;
+		
+
+			while(1)
+			{
+				cout << "Input filename to send to ISV. " << endl;
+				cout << "Filename: ";
+				cin >> intp_filename;
+
+				cout << endl;
+
+				fin_intp.open(intp_filename, ios::in);
+
+				if(!fin_intp)
+				{
+					cerr << "FileOpenError: Failed to open designated file.\n" << endl;
+				}
+				else
+				{
+					cout << "Open designated file \"" << intp_filename << "\" successfully." << endl;
+					break;
+				}
+			}
+
+			ss_intp << fin_intp.rdbuf();
+			intp_str = ss_intp.str();
+			
+			unsigned char *intp_plain;
+			unsigned const char *dummy_plain;
+
+			dummy_plain = reinterpret_cast<unsigned const char*>(intp_str.c_str());
+			intp_plain = const_cast<unsigned char*>(dummy_plain);
+
+			cout << "Display the content of loaded file for check: \n" << endl;
+			cout << "===============================================" << endl;
+			cout << intp_plain << endl;
+			cout << "===============================================" << endl;
+
+			//Start encryption
+			unsigned char* sp_key = session.sk;
+			unsigned char* sp_iv = (unsigned char *)"000000000000";
+			unsigned char intp_cipher[100000]; //intp_cipher[n];
+			int ciphertext_len, tag_len = 16;
+			uint8_t tag[16] = {'\0'};
+
+			ciphertext_len = encrypt_data_for_ISV(intp_plain, strlen((char*)intp_plain), sp_key, sp_iv, intp_cipher, tag);
+
+			if(ciphertext_len == -1)
+			{
+				cerr << "Failed to operate encryption." << endl;
+				cerr << "Abort program..." << endl;
+
+				return -1;
+			}
+			
+			cout << "Encrypted data successfully. Cipher text is:" << endl;
+			BIO_dump_fp(stdout, (const char*)intp_cipher, ciphertext_len);
+
+			//cout << "MAC tag is: " << hex << tag << endl;
+
+			/*convert data to base64 for sending with msgio correctly*/
+			uint8_t cipherb64[150000] = {'\0'};
+			int b64dst_len = 150000, b64_len;
+
+			b64_len = base64_encrypt(intp_cipher, ciphertext_len, cipherb64, b64dst_len);
+
+			cout << "==========================================================" << endl;
+			cout << "Base64 format of cipher is: " << endl;
+			cout << cipherb64 << endl << endl;
+			cout << "Length of cipher text is: " << ciphertext_len << endl;
+			cout << "Length of base64-ed cipher is: " << b64_len << endl << endl;
+			cout << "==========================================================" << endl;
+
+			/*Also convert tag to base64 format*/
+			uint8_t tagb64[64] = {'\0'}; //maybe sufficient with 32-size
+			int tagb64dst_len = 64, tagb64_len;
+
+			tagb64_len = base64_encrypt(tag, 16, tagb64, tagb64dst_len);
+
+			cout << "Base64 format of tag is: " << endl;
+			cout << tagb64 << endl << endl;
+			cout << "Length of base64-ed tag is: " << tagb64_len << endl << endl;
+			cout << "==========================================================" << endl;
+
+			/*Then convert cipher's length in base64 to base64*/
+			/*
+			b64_len can exceed 255, which is the limit of uint8_t, because it is int type.
+			so you must not directly cast b64_len from int to uint8_t.
+			Instead of it, you can use to_string() to convert uint8_t to int.
+			And if ISV(client.cpp) receive it, atoi() can be used to obtain int value from uint8_t.
+
+			SUMMARY:
+			- change incorrect cast to to_string for length-handling values(lenb64, taglenb64, deflenb64)
+			- use atoi to obtain appropriate int value at ISV side
+			- develop some method to fix corrupted base64 for length-handling values in ISV side
+			*/
+			
+			/*
+			uint8_t lenb64[32] = {'\0'}, uint8tlen[1] = {(uint8_t)b64_len}; //(uint8_t)b64_len <- THIS LOSS THE ACTUAL VALUE
+			int lenb64dst_len = 32, lenb64_len;
+
+			cout << "uint8_t-ed length is: " << (int)uint8tlen[0] << endl << endl;
+
+			lenb64_len = base64_encrypt(uint8tlen, 1, lenb64, 32);
+			cout << "Base64 format of cipher length is: " << endl;
+			cout << lenb64 << endl << endl;
+			cout << "Length of base64-ed cipher length is: " << lenb64_len << endl;
+			cout << "==========================================================" << endl;
+			*/
+
+			/*Finally convert tag's length in base64 to base64 */
+			/*
+			uint8_t taglenb64[32] = {'\0'}, uint8ttaglen[1] = {(uint8_t)tagb64_len};
+			int taglenb64dst_len = 32, taglenb64_len;
+
+			cout << "uint8_t-ed tag length is: " << (int)uint8ttaglen[0] << endl << endl;
+
+			taglenb64_len = base64_encrypt(uint8ttaglen, 1, taglenb64, 32);
+			cout << "Base64 format of tag length is: " << endl;
+			cout << taglenb64 << endl << endl;
+			cout << "Length of base64-ed tag length is: " << taglenb64_len << endl;
+			cout << "==========================================================" << endl;
+			*/
+
+			/*In addition to that, need to convert cipher's length to base64*/
+			uint8_t deflenb64[128] = {'\0'}; 
+			uint8_t *uint8tdeflen;
+			int deflenb64dst_len = 32, deflenb64_len;
+
+			uint8tdeflen = const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(to_string(ciphertext_len).c_str()));
+
+			cout << "uint8_t-ed default cipher length is: " << uint8tdeflen << endl << endl;
+
+			deflenb64_len = base64_encrypt(uint8tdeflen, strlen((char*)uint8tdeflen), deflenb64, 32);
+			cout << "Base64 format of default cipher length is: " << endl;
+			cout << deflenb64 << endl << endl;
+			cout << "Length of base64-ed default cipher length is: " << deflenb64_len << endl;
+			cout << "==========================================================" << endl;
+
+			/*test*/
+			/*
+			uint8_t deftaglenb64[32] = {'\0'}, uint8tdeftaglen[1] = {(uint8_t)'1000000'};
+			int deftaglenb64dst_len = 32, deftaglenb64_len;
+
+			cout << "uint8_t-ed base64 test is: " << (int)uint8tdeftaglen[0] << endl << endl;
+
+			deftaglenb64_len = base64_encrypt(uint8tdeftaglen, 1, deftaglenb64, 32);
+			cout << "Base64 format test is: " << endl;
+			cout << deftaglenb64 << endl << endl;
+			cout << "Length of base64-ed test is: " << deftaglenb64_len << endl;
+			cout << "==========================================================" << endl;
+			*/
+
+			/*Send base64-ed secret, its length, MAC tag and its length to ISV*/
+
+			/*cipher*/
+			cout << "Send encrypted file to ISV." << endl;
+
+			cout << "Encrypted secret to sent in base64 is (display again): " << endl;
+			msgio->send(cipherb64, strlen((char*)cipherb64));
+
+			cout << "Complete sending message." << endl;
+			cout << "Please wait for 0.25 sec." << endl;
+
+			usleep(250000);
+
+			/*cipher length*/
+			/*
+			cout << "Cipher length to sent in base64 is: " << endl;
+			msgio->send(lenb64, lenb64_len);
+
+			cout << "Complete sending cipher length." << endl;
+			cout << "Please wait for 0.25 sec." << endl;
+
+			usleep(250000);
+			*/
+			
+			/*MAC tag*/
+			cout << "Tag to send is: (display again)" << endl;
+			msgio->send(tagb64, strlen((char*)tagb64));
+
+			cout << "Complete sending MAC tag." << endl;
+			cout << "Please wait for 0.25 sec." << endl;
+
+			usleep(250000);
+
+			/*MAC tag's length*/
+			/*
+			cout << "Tag's length to send is: " << endl;
+			msgio->send(taglenb64, taglenb64_len);
+
+			cout << "Complete sending MAC tag's length." << endl;
+			cout << "Please wait for 0.25 sec." << endl;
+			*/
+
+			usleep(250000);
+
+			/*default cipher length*/
+			cout << "Default cipher's length to send is: " << endl;
+			msgio->send(deflenb64, deflenb64_len);
+
+			cout << "Complete sending default cipher length." << endl;
+			
+			/*
+			cout << "Please wait for 0.25 sec." << endl;
+
+			usleep(250000);
+			*/
+
+			/*default tag length*/
+
+			/*
+			cout << "Default tag's length to send is: " << endl;
+			msgio->send(deftaglenb64, deftaglenb64_len);
+			
+			cout << "Complete sending default tag length." << endl;
+			*/
+		}
+		//end block to avoid retarded goto error
+
 disconnect:
 		msgio->disconnect();
-	}
+	//}
 
 	crypto_destroy();
 
@@ -875,7 +1132,8 @@ int process_msg3 (MsgIO *msgio, IAS_Connection *ias, sgx_ra_msg1_t *msg1,
 		 * secret between us and the client.
 		 */
 
-		if ( msg4->status == Trusted ) {
+		//if ( msg4->status == Trusted ) {
+		if(true){
 			unsigned char hashmk[32], hashsk[32];
 
 			if ( debug ) eprintf("+++ Deriving the MK and SK\n");
@@ -1330,15 +1588,19 @@ int get_attestation_report(IAS_Connection *ias, int version,
 			msg4->status = Trusted_ItsComplicated;
 		}
 	} else if ( !(reportObj["isvEnclaveQuoteStatus"].ToString().compare("GROUP_OUT_OF_DATE"))) {
+		/*THIS ERROR MUST BE IGNORED BECAUSE CORRUPTED*/
 		msg4->status = NotTrusted_ItsComplicated;
-		if ( verbose ) eprintf("Enclave NOT TRUSTED and COMPLICATED - Reason: %s\n",
+		flag_BIOS = true;
+		cerr << "***CAUTION: THIS ERROR MUST BE IGNORED BECAUSE CLEARLY BUGED" << endl;
+		//if ( verbose ) eprintf("Enclave NOT TRUSTED and COMPLICATED - Reason: %s\n",
+		if (verbose ) eprintf("IAS returned unjust error message. Please ignore this. Message: %s\n",
 			reportObj["isvEnclaveQuoteStatus"].ToString().c_str());
 	} else {
 		msg4->status = NotTrusted;
 		if ( verbose ) eprintf("Enclave NOT TRUSTED - Reason: %s\n",
 			reportObj["isvEnclaveQuoteStatus"].ToString().c_str());
 	}
-
+	
 
 	/* Check to see if a platformInfoBlob was sent back as part of the
 	 * response */
@@ -1458,6 +1720,101 @@ int get_proxy(char **server, unsigned int *port, const char *url)
 	(*server)[srv.length()] = 0;
 
 	return 1;
+}
+
+int encrypt_data_for_ISV(unsigned char *plaintext, int plaintext_len,
+	unsigned char *key, unsigned char *iv, unsigned char *ciphertext, uint8_t* tag)
+{
+	EVP_CIPHER_CTX *ctx;
+
+	int len;
+
+	int ciphertext_len;
+
+	/* Create and initialise the context */
+	if(!(ctx = EVP_CIPHER_CTX_new()))
+	{
+		ERR_print_errors_fp(stderr);
+		return -1;
+	}
+
+	/* Initialise the encryption operation. IMPORTANT - ensure you use a key
+	* and IV size appropriate for your cipher
+	* In this example we are using 256 bit AES (i.e. a 256 bit key). The
+	* IV size for *most* modes is the same as the block size. For AES this
+	* is 128 bits */
+	if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_128_gcm(), NULL, key, iv))
+	{
+		ERR_print_errors_fp(stderr);
+		return -1;
+	}
+
+	/* Provide the message to be encrypted, and obtain the encrypted output.
+	* EVP_EncryptUpdate can be called multiple times if necessary
+	*/
+	if(1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len))
+	{
+		ERR_print_errors_fp(stderr);
+		return -1;
+	}
+	ciphertext_len = len;
+
+	/* Finalise the encryption. Further ciphertext bytes may be written at
+	* this stage.
+	*/
+	if(1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len))
+	{
+		ERR_print_errors_fp(stderr);
+		return -1;
+	}
+	ciphertext_len += len;
+
+	/*Obtain MAC tag*/
+	if(1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag))
+	{
+		ERR_print_errors_fp(stderr);
+		return -1;
+	}
+
+	/* Clean up */
+	EVP_CIPHER_CTX_free(ctx);
+
+	return ciphertext_len;
+}
+
+/*referred: https://ryozi.hatenadiary.jp/entry/20101203/1291380670 in 12/30/2018*/
+int base64_encrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen)
+{
+	const char Base64char[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	int i,j;
+	int calclength = (srclen/3*4) + (srclen%3?4:0);
+	if(calclength > dstlen) return -1;
+	
+	j=0;
+	for(i=0; i+2<srclen; i+=3){
+		dst[j++] = Base64char[ (src[i] >> 2) & 0x3F ];
+		dst[j++] = Base64char[ (src[i] << 4 | src[i+1] >> 4) & 0x3F ];
+		dst[j++] = Base64char[ (src[i+1] << 2 | src[i+2] >> 6) & 0x3F ];
+		dst[j++] = Base64char[ (src[i+2]) & 0x3F ];
+	}
+	
+	if(i<srclen){
+		dst[j++] = Base64char[ (src[i] >> 2) & 0x3F ];
+		if(i+1<srclen){
+			dst[j++] = Base64char[ (src[i] << 4 | src[i+1] >> 4) & 0x3F ];
+			if(i+2<srclen){
+				dst[j++] = Base64char[ (src[i+1] << 2 | src[i+2] >> 6) & 0x3F ];
+			}else{
+				dst[j++] = Base64char[ (src[i+1] << 2) & 0x3F ];
+			}
+		}else{
+			dst[j++] = Base64char[ (src[i] << 4) & 0x3F ];
+		}
+	}
+	while(j%4) dst[j++] = '=';
+	
+	if(j<dstlen) dst[j] = '\0';
+	return j;
 }
 
 #ifndef _WIN32

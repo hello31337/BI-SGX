@@ -50,12 +50,20 @@ enclave {
 
 		public sgx_status_t enclave_ra_close(sgx_ra_context_t ctx);
 
+		public sgx_status_t run_interpreter(sgx_ra_context_t context,
+			[user_check]unsigned char *code_cipher, size_t cipherlen, 
+			[user_check]unsigned char *tag, [out]int* result);
+
 	};
 
 	untrusted {
 #ifndef _WIN32
 		include "config.h"
 #endif
+		void OCALL_print([in, string]const char* message);
+		void OCALL_print_status(sgx_status_t st);
+		void OCALL_print_int(int num);
+		void OCALL_dump([user_check]uint8_t *char_to_dump, int size);
 	};
 };
 

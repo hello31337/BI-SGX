@@ -191,3 +191,64 @@ sgx_status_t enclave_ra_close(sgx_ra_context_t ctx)
         ret = sgx_ra_close(ctx);
         return ret;
 }
+
+sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char* code_cipher,
+	size_t cipherlen, unsigned char *tag, int* result)
+{
+	sgx_status_t status = SGX_SUCCESS;
+	sgx_ec_key_128bit_t sk_key, mk_key;
+	
+	/*Get session key SK to decrypt secret*/
+	status = sgx_ra_get_keys(context, SGX_RA_KEY_SK, &sk_key);
+
+	if(status != SGX_SUCCESS)
+	{
+		const char* message = "Error while obtaining session key.";
+		OCALL_print(message);
+		OCALL_print_status(status);
+		return status;
+	}
+	
+	/*Decrypt secret from SP*/
+	unsigned char* p_iv = (unsigned char*)"000000000000"; //This is CRITICALLY BAD, but for simplicity in test
+	uint32_t p_iv_len = strlen((char*)p_iv);
+	uint8_t intp_code[10000] = {'\0'};
+	//uint8_t *code_cipher_t = (uint8_t*)malloc(sizeof(uint8_t)*cipherlen);
+
+	/*
+	for(int i = 0; i < cipherlen; i++)
+	{
+		code_cipher_t[i] = code_cipher[i];
+	}
+	*/
+	
+	sgx_aes_gcm_128bit_tag_t tag_t;
+
+	for(int i = 0; i < 16; i++)
+	{
+		tag_t[i] = tag[i];
+	}
+	
+	//OCALL_dump(code_cipher_t, cipherlen);
+
+	status = sgx_rijndael128GCM_decrypt(&sk_key, (uint8_t *)code_cipher, cipherlen,
+		intp_code, (uint8_t *)p_iv, p_iv_len, NULL, 0, &tag_t);
+
+	if(status != SGX_SUCCESS)
+	{
+		const char* message = "Error while decrypting SP's secret.";
+		OCALL_print(message);
+		OCALL_print_status(status);
+		return status;
+	}
+
+	{
+		OCALL_print_int((int)sizeof(intp_code));
+		const char *message = (const char*)intp_code;
+		OCALL_print(message);
+	}
+	
+	*result = 1000;
+
+	return SGX_SUCCESS;
+}

@@ -48,6 +48,8 @@ using namespace std;
 #include "win32/getopt.h"
 #else
 #include <openssl/evp.h>
+#include <openssl/conf.h>
+#include <openssl/err.h>
 #include <getopt.h>
 #include <unistd.h>
 #endif
@@ -64,6 +66,8 @@ using namespace std;
 #include "msgio.h"
 #include "logfile.h"
 #include "quote_size.h"
+
+#include <iostream>
 
 #define MAX_LEN 80
 
@@ -107,6 +111,10 @@ int do_attestation(sgx_enclave_id_t eid, config_t *config);
 
 char debug= 0;
 char verbose= 0;
+MsgIO *msgio = NULL;
+
+sgx_ra_context_t g_ra_ctx = 0xdeaddead;
+sgx_status_t g_sgxrv = SGX_SUCCESS;
 
 #define MODE_ATTEST 0x0
 #define MODE_EPID 	0x1
@@ -129,6 +137,69 @@ char verbose= 0;
 # define ENCLAVE_NAME "Enclave.signed.so"
 #endif
 
+void OCALL_print(const char* message)
+{
+	printf("%s\n", message);
+	return;
+}
+
+void OCALL_print_status(sgx_status_t st)
+{
+	cout << "Error status: " << hex << st << endl;
+	return;
+}
+
+void OCALL_print_int(int num)
+{
+	cout << "OCALL_INT_PRINT: " << num << endl;
+	return;
+}
+
+void OCALL_dump(uint8_t *char_to_dump, int size)
+{
+	BIO_dump_fp(stdout, (const char*)char_to_dump, size);
+	return;
+}
+
+int base64_decrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen)
+{
+	const unsigned char Base64num[] = {
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0x3E,0xFF,0xFF,0xFF,0x3F,
+		0x34,0x35,0x36,0x37,0x38,0x39,0x3A,0x3B,0x3C,0x3D,0xFF,0xFF,0xFF,0x00,0xFF,0xFF,
+		0xFF,0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x0C,0x0D,0x0E,
+		0x0F,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0x1A,0x1B,0x1C,0x1D,0x1E,0x1F,0x20,0x21,0x22,0x23,0x24,0x25,0x26,0x27,0x28,
+		0x29,0x2A,0x2B,0x2C,0x2D,0x2E,0x2F,0x30,0x31,0x32,0x33,0xFF,0xFF,0xFF,0xFF,0xFF,
+		
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+	};
+	int calclength = (srclen/4*3);
+	int i,j;
+	if(calclength > dstlen || srclen % 4 != 0) return 0;
+	
+	j=0;
+	for(i=0; i+3<srclen; i+=4){
+		if((Base64num[src[i+0]]|Base64num[src[i+1]]|Base64num[src[i+2]]|Base64num[src[i+3]]) > 0x3F){
+			return -1;
+		}
+		dst[j++] = Base64num[src[i+0]]<<2 | Base64num[src[i+1]] >> 4;
+		dst[j++] = Base64num[src[i+1]]<<4 | Base64num[src[i+2]] >> 2;
+		dst[j++] = Base64num[src[i+2]]<<6 | Base64num[src[i+3]];
+	}
+	
+	if(j<dstlen) dst[j] = '\0';
+	return j;
+}
+
 int main (int argc, char *argv[])
 {
 	config_t config;
@@ -141,6 +212,8 @@ int main (int argc, char *argv[])
 	EVP_PKEY *service_public_key= NULL;
 	char have_spid= 0;
 	char flag_stdio= 0;
+
+	cout << "*** INFO: ISV is running as SERVER(non-SGX term). ***" << endl;
 
 	/* Create a logfile to capture debug output and actual msg data */
 	fplog = create_logfile("client.log");
@@ -404,15 +477,293 @@ int main (int argc, char *argv[])
 	}
 #endif
 
+	if ( config.server == NULL ) {
+		msgio = new MsgIO();
+	} else {
+		try {
+			msgio = new MsgIO(NULL, (config.port == NULL) ?
+				DEFAULT_PORT : config.port);
+		}
+		catch(...) {
+			exit(1);
+		}
+	}
+
+	bool isRAed = false;
+
 	/* Are we attesting, or just spitting out a quote? */
 
-	if ( config.mode == MODE_ATTEST ) {
-		do_attestation(eid, &config);
-	} else if ( config.mode == MODE_EPID || config.mode == MODE_QUOTE ) {
-		do_quote(eid, &config);
-	} else {
-		fprintf(stderr, "Unknown operation mode.\n");
-		return 1;
+	while(msgio->server_loop())
+	{
+		if(isRAed == false)
+		{
+			isRAed = true;
+			if ( config.mode == MODE_ATTEST )
+			{
+				do_attestation(eid, &config);
+			} else if ( config.mode == MODE_EPID || config.mode == MODE_QUOTE ) {
+				do_quote(eid, &config);
+			} else {
+				fprintf(stderr, "Unknown operation mode.\n");
+				return 1;
+			}
+		}
+
+		cout << "RA completed. Receive secret data from SP... " << endl;
+		
+		int rv;
+		size_t sz;
+		void **received_cipher;
+		void **received_len;
+		void **received_tag;
+		void **received_taglen;
+		void **received_deflen;
+		void **received_deftaglen;
+		size_t cipherb64len, tagb64len, recvdeflen;
+
+		rv = msgio->read((void **) &received_cipher, &sz);
+
+		if ( rv == -1 ) {
+			eprintf("system error reading secret from SP\n");
+			return 0;
+		} else if ( rv == 0 ) {
+			eprintf("protocol error reading secret from SP\n");
+			return 0;
+		}
+
+		cipherb64len = sz / 2;
+		
+		/*
+		rv = msgio->read((void **) &received_len, &sz);
+
+		if ( rv == -1 ) {
+			eprintf("system error reading cipher length from SP\n");
+			return 0;
+		} else if ( rv == 0 ) {
+			eprintf("protocol error reading cipher length from SP\n");
+			return 0;
+		}
+		*/
+		
+
+		rv = msgio->read((void **) &received_tag, &sz);
+
+		if ( rv == -1 ) {
+            eprintf("system error reading MAC tag from SP\n");
+            return 0;
+        } else if ( rv == 0 ) {
+            eprintf("protocol error reading MAC tag from SP\n");
+            return 0;
+        }
+
+		tagb64len = sz / 2;
+
+		/*
+		rv = msgio->read((void **) &received_taglen, &sz);
+
+		if ( rv == -1 ) {
+			eprintf("system error reading MAC tag's length from SP\n");
+			return 0;
+		} else if ( rv == 0 ) {
+			eprintf("protocol error reading MAC tag's length from SP\n");
+			return 0;
+		}
+		*/
+
+		rv = msgio->read((void **) &received_deflen, &sz);
+
+		if ( rv == -1 ) {
+			eprintf("system error reading default cipher length from SP\n");
+			return 0;
+		} else if ( rv == 0 ) {
+			eprintf("protocol error reading default cipher length from SP\n");
+			return 0;
+		}
+
+		recvdeflen = sz / 2;
+
+		/*
+		rv = msgio->read((void **) &received_deftaglen, &sz);
+
+		if ( rv == -1 ) {
+			eprintf("system error reading default tag length from SP\n");
+			return 0;
+		} else if ( rv == 0 ) {
+			eprintf("protocol error reading default tag length from SP\n");
+			return 0;
+		}
+		*/
+
+		//cout << "Received MAC tag successfully." << endl;
+
+		/*
+		unsigned char *cipher_to_enclave = (unsigned char *) received_cipher;
+		cout << "cipherlen uint8_t: " << (unsigned char *) received_len << endl;
+		size_t cipherlen = (size_t)received_len[0];
+		*/
+
+		/*Obtain base64-ed cipher text from received pointer*/
+		unsigned char *cipherb64 = (unsigned char *) received_cipher;
+		cout << "Received base64-ed cipher is: " << endl;
+		cout << cipherb64 << endl << endl;
+		
+		size_t cipherb64_len = strlen((char*)cipherb64);
+		cout << "Base64-ed cipher's length is: " << cipherb64_len << endl;
+
+		/*Also obtain base64-ed cipher length*/
+		/*
+		unsigned char *lenb64 = (unsigned char *) received_len;
+		
+		cout << "Received base64-ed cipher length is: " << endl;
+		cout << lenb64 << endl << endl;
+		*/
+
+		/*Then obtain base64-ed MAC tag*/
+		unsigned char *tagb64 = (unsigned char *) received_tag;
+		cout << "Received base64-ed MAC tag is: " << endl;
+		cout << tagb64 << endl << endl;
+
+		size_t tagb64_len = strlen((char*)tagb64);
+		cout << "Base64-ed MAC tag's length is: " << tagb64_len << endl;
+
+		/*Finally obtain base64-ed MAC tag length*/
+		/*
+		unsigned char *taglenb64 = (unsigned char *) received_taglen;
+
+		cout << "Received base64-ed tag length is: " << endl;
+		cout << taglenb64 << endl << endl;
+		*/
+
+		/*In addition to that, obtain base64-ed default cipher length*/
+		unsigned char *deflenb64 = (unsigned char *) received_deflen;
+
+		cout << "Received base64-ed default cipher length is: " << endl;
+		cout << deflenb64 << endl << endl;
+
+		/*And obtain base64-ed default tag length*/
+
+		/*
+		unsigned char *deftaglenb64 = (unsigned char *) received_deftaglen;
+
+		cout << "Received base64-ed default tag length is: " << endl;
+		cout << deftaglenb64 << endl << endl;
+		*/	
+
+		int deflen, rettmp, deftaglen = 16;
+		uint8_t cipherb64lentmp[32] = {'\0'}, tagb64lentmp[32] = {'\0'};
+		uint8_t deflentmp[128] = {'\0'};
+		uint8_t deftaglentmp[32] = {'\0'};
+		uint8_t *cipher_to_enclave;
+		uint8_t tag_to_enclave[16];
+
+		/*Decrypt cipher's length from base64*/
+		/*
+		rettmp = base64_decrypt(lenb64, strlen((char*)lenb64), cipherb64lentmp, 32);
+		cipherb64len = (int)cipherb64lentmp[0];
+
+		cout << "Decrypted cipher length is: " << cipherb64len << endl;
+		*/
+
+		/*Decrypt MAC tag's length from base64*/
+		/*
+		rettmp = base64_decrypt(taglenb64, strlen((char*)taglenb64), tagb64lentmp, 32);
+		tagb64len = (int)tagb64lentmp[0];
+
+		cout << "Decrypted MAC tag length is: " << tagb64len << endl;
+		*/
+
+		/*Decrypt default cipher's length from base64*/
+		rettmp = base64_decrypt(deflenb64, recvdeflen, deflentmp, 32);
+		deflen = strtol((char*)deflentmp, NULL, 10);
+
+		/*
+		cout << "strlen((char*)deflenb64): " << strlen((char*)deflenb64) << endl;
+		cout << "content of deflenb64: " << endl;
+		BIO_dump_fp(stdout, (const char*)deflenb64, strlen((char*)deflenb64));
+		*/
+
+		cout << "Decrypted default cipher length is: " << deflen << endl;
+		cout << "rettmp: " << rettmp << endl;
+
+		/*Decrypt default tag's length from base64*/
+
+		/*
+		rettmp = base64_decrypt(deftaglenb64, strlen((char*)deftaglenb64), deftaglentmp, 32);
+		deftaglen = 16;
+
+		cout << "Default tag length is: " << deftaglen << endl;
+		*/
+		
+
+		/*Decrypt cipher from base64*/
+		cipher_to_enclave = new uint8_t[cipherb64len];
+		int cipherlen;
+
+		cipherlen = base64_decrypt(cipherb64, cipherb64len, cipher_to_enclave, cipherb64len);
+
+		cout << "Cipher length is: " << cipherlen << endl;
+		cout << "Cipher decoded from base64 is: " << endl;
+		BIO_dump_fp(stdout, (const char*)cipher_to_enclave, cipherlen);
+
+		/*Decrypt tag from base64*/
+		int taglen;
+		uint8_t tag_tmp[32] = {'\0'};
+
+		taglen = base64_decrypt(tagb64, tagb64len, tag_tmp, 32);
+
+		cout << "Tag length is (must be 16, but maybe some offset): " << taglen << endl;
+		cout << "Tag decoded from base64 is: " << endl;
+		BIO_dump_fp(stdout, (const char*)tag_tmp, taglen);
+
+		for(i = 0; i < 16; i++)
+		{
+			tag_to_enclave[i] = tag_tmp[i];
+		}
+
+		/*
+		unsigned char *cipher_to_enclave = NULL;
+		size_t cipherlen;
+
+		cout << "Received cipher text is: " << (unsigned char *)received_len << endl;
+		BIO_dump_fp(stdout, (const char*)cipher_to_enclave, 100);
+
+		cout << "Received cipher text's length is: " << dec << cipherlen << endl;
+
+		unsigned char *tag_tmp = (unsigned char *) received_tag;
+		unsigned char tag_to_enclave[16];
+
+		for(int i = 0; i < 16; i++)
+		{
+			tag_to_enclave[i] = tag_tmp[i];
+		}
+
+		cout << "Received tag is (in hex): " << endl;
+
+		BIO_dump_fp(stdout, (const char*)tag_to_enclave, 16);
+
+		cout << "Received tag's length is (must be 16): " << strlen((const char*)tag_to_enclave) << endl;
+
+		cout << endl;
+		*/
+
+		cout << "Execute ECALL with passing cipher data." << endl;
+
+		int ecall_output = -2000;
+		sgx_status_t retval;
+
+		cout << hex << g_ra_ctx << endl;
+
+		sgx_status_t intp_status = run_interpreter(eid, &retval, g_ra_ctx, cipher_to_enclave,
+			(size_t)deflen, tag_to_enclave, &ecall_output);
+
+		if(intp_status != SGX_SUCCESS)
+		{
+			cerr << "App: fatal error: Failed to finish ECALL correctly." << endl;
+		}
+
+		cout << "Result from enclave: " << dec << ecall_output << endl;
+
+		enclave_ra_close(eid, &g_sgxrv, g_ra_ctx);
 	}
 
      
@@ -431,11 +782,12 @@ int do_attestation (sgx_enclave_id_t eid, config_t *config)
 	uint32_t flags= config->flags;
 	sgx_ra_context_t ra_ctx= 0xdeadbeef;
 	int rv;
-	MsgIO *msgio;
+	//MsgIO *msgio;
 	size_t msg4sz = 0;
 	int enclaveTrusted = NotTrusted; // Not Trusted
 	int b_pse= OPT_ISSET(flags, OPT_PSE);
 
+	/*
 	if ( config->server == NULL ) {
 		msgio = new MsgIO();
 	} else {
@@ -447,6 +799,7 @@ int do_attestation (sgx_enclave_id_t eid, config_t *config)
 			exit(1);
 		}
 	}
+	*/
 
 	/*
 	 * WARNING! Normally, the public key would be hardcoded into the
@@ -794,7 +1147,8 @@ int do_attestation (sgx_enclave_id_t eid, config_t *config)
 	 * provider.
 	 */
 
-	if ( enclaveTrusted == Trusted ) {
+	//if ( enclaveTrusted == Trusted ) {
+	if (true){
 		sgx_status_t key_status, sha_status;
 		sgx_sha256_hash_t mkhash, skhash;
 
@@ -832,8 +1186,10 @@ int do_attestation (sgx_enclave_id_t eid, config_t *config)
 		free (msg4);
 		msg4 = NULL;
 	}
+		g_ra_ctx = ra_ctx;
+		g_sgxrv = sgxrv;
 
-        enclave_ra_close(eid, &sgxrv, ra_ctx);
+        //enclave_ra_close(eid, &sgxrv, ra_ctx);
    
 	return 0;
 }
