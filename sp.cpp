@@ -705,8 +705,6 @@ int main(int argc, char *argv[])
 			cout << "Encrypted data successfully. Cipher text is:" << endl;
 			BIO_dump_fp(stdout, (const char*)intp_cipher, ciphertext_len);
 
-			//cout << "MAC tag is: " << hex << tag << endl;
-
 			/*convert data to base64 for sending with msgio correctly*/
 			uint8_t cipherb64[150000] = {'\0'};
 			int b64dst_len = 150000, b64_len;
@@ -731,46 +729,7 @@ int main(int argc, char *argv[])
 			cout << "Length of base64-ed tag is: " << tagb64_len << endl << endl;
 			cout << "==========================================================" << endl;
 
-			/*Then convert cipher's length in base64 to base64*/
-			/*
-			b64_len can exceed 255, which is the limit of uint8_t, because it is int type.
-			so you must not directly cast b64_len from int to uint8_t.
-			Instead of it, you can use to_string() to convert uint8_t to int.
-			And if ISV(client.cpp) receive it, atoi() can be used to obtain int value from uint8_t.
-
-			SUMMARY:
-			- change incorrect cast to to_string for length-handling values(lenb64, taglenb64, deflenb64)
-			- use atoi to obtain appropriate int value at ISV side
-			- develop some method to fix corrupted base64 for length-handling values in ISV side
-			*/
 			
-			/*
-			uint8_t lenb64[32] = {'\0'}, uint8tlen[1] = {(uint8_t)b64_len}; //(uint8_t)b64_len <- THIS LOSS THE ACTUAL VALUE
-			int lenb64dst_len = 32, lenb64_len;
-
-			cout << "uint8_t-ed length is: " << (int)uint8tlen[0] << endl << endl;
-
-			lenb64_len = base64_encrypt(uint8tlen, 1, lenb64, 32);
-			cout << "Base64 format of cipher length is: " << endl;
-			cout << lenb64 << endl << endl;
-			cout << "Length of base64-ed cipher length is: " << lenb64_len << endl;
-			cout << "==========================================================" << endl;
-			*/
-
-			/*Finally convert tag's length in base64 to base64 */
-			/*
-			uint8_t taglenb64[32] = {'\0'}, uint8ttaglen[1] = {(uint8_t)tagb64_len};
-			int taglenb64dst_len = 32, taglenb64_len;
-
-			cout << "uint8_t-ed tag length is: " << (int)uint8ttaglen[0] << endl << endl;
-
-			taglenb64_len = base64_encrypt(uint8ttaglen, 1, taglenb64, 32);
-			cout << "Base64 format of tag length is: " << endl;
-			cout << taglenb64 << endl << endl;
-			cout << "Length of base64-ed tag length is: " << taglenb64_len << endl;
-			cout << "==========================================================" << endl;
-			*/
-
 			/*In addition to that, need to convert cipher's length to base64*/
 			uint8_t deflenb64[128] = {'\0'}; 
 			uint8_t *uint8tdeflen;
@@ -786,19 +745,6 @@ int main(int argc, char *argv[])
 			cout << "Length of base64-ed default cipher length is: " << deflenb64_len << endl;
 			cout << "==========================================================" << endl;
 
-			/*test*/
-			/*
-			uint8_t deftaglenb64[32] = {'\0'}, uint8tdeftaglen[1] = {(uint8_t)'1000000'};
-			int deftaglenb64dst_len = 32, deftaglenb64_len;
-
-			cout << "uint8_t-ed base64 test is: " << (int)uint8tdeftaglen[0] << endl << endl;
-
-			deftaglenb64_len = base64_encrypt(uint8tdeftaglen, 1, deftaglenb64, 32);
-			cout << "Base64 format test is: " << endl;
-			cout << deftaglenb64 << endl << endl;
-			cout << "Length of base64-ed test is: " << deftaglenb64_len << endl;
-			cout << "==========================================================" << endl;
-			*/
 
 			/*Send base64-ed secret, its length, MAC tag and its length to ISV*/
 
@@ -812,17 +758,6 @@ int main(int argc, char *argv[])
 			cout << "Please wait for 0.25 sec." << endl;
 
 			usleep(250000);
-
-			/*cipher length*/
-			/*
-			cout << "Cipher length to sent in base64 is: " << endl;
-			msgio->send(lenb64, lenb64_len);
-
-			cout << "Complete sending cipher length." << endl;
-			cout << "Please wait for 0.25 sec." << endl;
-
-			usleep(250000);
-			*/
 			
 			/*MAC tag*/
 			cout << "Tag to send is: (display again)" << endl;
@@ -833,37 +768,12 @@ int main(int argc, char *argv[])
 
 			usleep(250000);
 
-			/*MAC tag's length*/
-			/*
-			cout << "Tag's length to send is: " << endl;
-			msgio->send(taglenb64, taglenb64_len);
-
-			cout << "Complete sending MAC tag's length." << endl;
-			cout << "Please wait for 0.25 sec." << endl;
-			*/
-
-			usleep(250000);
-
 			/*default cipher length*/
 			cout << "Default cipher's length to send is: " << endl;
 			msgio->send(deflenb64, deflenb64_len);
 
 			cout << "Complete sending default cipher length." << endl;
 			
-			/*
-			cout << "Please wait for 0.25 sec." << endl;
-
-			usleep(250000);
-			*/
-
-			/*default tag length*/
-
-			/*
-			cout << "Default tag's length to send is: " << endl;
-			msgio->send(deftaglenb64, deftaglenb64_len);
-			
-			cout << "Complete sending default tag length." << endl;
-			*/
 		}
 		//end block to avoid retarded goto error
 

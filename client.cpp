@@ -533,18 +533,6 @@ int main (int argc, char *argv[])
 
 		cipherb64len = sz / 2;
 		
-		/*
-		rv = msgio->read((void **) &received_len, &sz);
-
-		if ( rv == -1 ) {
-			eprintf("system error reading cipher length from SP\n");
-			return 0;
-		} else if ( rv == 0 ) {
-			eprintf("protocol error reading cipher length from SP\n");
-			return 0;
-		}
-		*/
-		
 
 		rv = msgio->read((void **) &received_tag, &sz);
 
@@ -558,18 +546,7 @@ int main (int argc, char *argv[])
 
 		tagb64len = sz / 2;
 
-		/*
-		rv = msgio->read((void **) &received_taglen, &sz);
-
-		if ( rv == -1 ) {
-			eprintf("system error reading MAC tag's length from SP\n");
-			return 0;
-		} else if ( rv == 0 ) {
-			eprintf("protocol error reading MAC tag's length from SP\n");
-			return 0;
-		}
-		*/
-
+		
 		rv = msgio->read((void **) &received_deflen, &sz);
 
 		if ( rv == -1 ) {
@@ -582,19 +559,6 @@ int main (int argc, char *argv[])
 
 		recvdeflen = sz / 2;
 
-		/*
-		rv = msgio->read((void **) &received_deftaglen, &sz);
-
-		if ( rv == -1 ) {
-			eprintf("system error reading default tag length from SP\n");
-			return 0;
-		} else if ( rv == 0 ) {
-			eprintf("protocol error reading default tag length from SP\n");
-			return 0;
-		}
-		*/
-
-		//cout << "Received MAC tag successfully." << endl;
 
 		/*
 		unsigned char *cipher_to_enclave = (unsigned char *) received_cipher;
@@ -610,14 +574,6 @@ int main (int argc, char *argv[])
 		size_t cipherb64_len = strlen((char*)cipherb64);
 		cout << "Base64-ed cipher's length is: " << cipherb64_len << endl;
 
-		/*Also obtain base64-ed cipher length*/
-		/*
-		unsigned char *lenb64 = (unsigned char *) received_len;
-		
-		cout << "Received base64-ed cipher length is: " << endl;
-		cout << lenb64 << endl << endl;
-		*/
-
 		/*Then obtain base64-ed MAC tag*/
 		unsigned char *tagb64 = (unsigned char *) received_tag;
 		cout << "Received base64-ed MAC tag is: " << endl;
@@ -626,13 +582,6 @@ int main (int argc, char *argv[])
 		size_t tagb64_len = strlen((char*)tagb64);
 		cout << "Base64-ed MAC tag's length is: " << tagb64_len << endl;
 
-		/*Finally obtain base64-ed MAC tag length*/
-		/*
-		unsigned char *taglenb64 = (unsigned char *) received_taglen;
-
-		cout << "Received base64-ed tag length is: " << endl;
-		cout << taglenb64 << endl << endl;
-		*/
 
 		/*In addition to that, obtain base64-ed default cipher length*/
 		unsigned char *deflenb64 = (unsigned char *) received_deflen;
@@ -640,14 +589,7 @@ int main (int argc, char *argv[])
 		cout << "Received base64-ed default cipher length is: " << endl;
 		cout << deflenb64 << endl << endl;
 
-		/*And obtain base64-ed default tag length*/
 
-		/*
-		unsigned char *deftaglenb64 = (unsigned char *) received_deftaglen;
-
-		cout << "Received base64-ed default tag length is: " << endl;
-		cout << deftaglenb64 << endl << endl;
-		*/	
 
 		int deflen, rettmp, deftaglen = 16;
 		uint8_t cipherb64lentmp[32] = {'\0'}, tagb64lentmp[32] = {'\0'};
@@ -656,43 +598,13 @@ int main (int argc, char *argv[])
 		uint8_t *cipher_to_enclave;
 		uint8_t tag_to_enclave[16];
 
-		/*Decrypt cipher's length from base64*/
-		/*
-		rettmp = base64_decrypt(lenb64, strlen((char*)lenb64), cipherb64lentmp, 32);
-		cipherb64len = (int)cipherb64lentmp[0];
-
-		cout << "Decrypted cipher length is: " << cipherb64len << endl;
-		*/
-
-		/*Decrypt MAC tag's length from base64*/
-		/*
-		rettmp = base64_decrypt(taglenb64, strlen((char*)taglenb64), tagb64lentmp, 32);
-		tagb64len = (int)tagb64lentmp[0];
-
-		cout << "Decrypted MAC tag length is: " << tagb64len << endl;
-		*/
-
+		
 		/*Decrypt default cipher's length from base64*/
 		rettmp = base64_decrypt(deflenb64, recvdeflen, deflentmp, 32);
 		deflen = strtol((char*)deflentmp, NULL, 10);
 
-		/*
-		cout << "strlen((char*)deflenb64): " << strlen((char*)deflenb64) << endl;
-		cout << "content of deflenb64: " << endl;
-		BIO_dump_fp(stdout, (const char*)deflenb64, strlen((char*)deflenb64));
-		*/
-
 		cout << "Decrypted default cipher length is: " << deflen << endl;
 		cout << "rettmp: " << rettmp << endl;
-
-		/*Decrypt default tag's length from base64*/
-
-		/*
-		rettmp = base64_decrypt(deftaglenb64, strlen((char*)deftaglenb64), deftaglentmp, 32);
-		deftaglen = 16;
-
-		cout << "Default tag length is: " << deftaglen << endl;
-		*/
 		
 
 		/*Decrypt cipher from base64*/
@@ -719,32 +631,6 @@ int main (int argc, char *argv[])
 		{
 			tag_to_enclave[i] = tag_tmp[i];
 		}
-
-		/*
-		unsigned char *cipher_to_enclave = NULL;
-		size_t cipherlen;
-
-		cout << "Received cipher text is: " << (unsigned char *)received_len << endl;
-		BIO_dump_fp(stdout, (const char*)cipher_to_enclave, 100);
-
-		cout << "Received cipher text's length is: " << dec << cipherlen << endl;
-
-		unsigned char *tag_tmp = (unsigned char *) received_tag;
-		unsigned char tag_to_enclave[16];
-
-		for(int i = 0; i < 16; i++)
-		{
-			tag_to_enclave[i] = tag_tmp[i];
-		}
-
-		cout << "Received tag is (in hex): " << endl;
-
-		BIO_dump_fp(stdout, (const char*)tag_to_enclave, 16);
-
-		cout << "Received tag's length is (must be 16): " << strlen((const char*)tag_to_enclave) << endl;
-
-		cout << endl;
-		*/
 
 		cout << "Execute ECALL with passing cipher data." << endl;
 
