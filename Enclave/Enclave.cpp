@@ -25,6 +25,33 @@ in the License.
 #include <sgx_tkey_exchange.h>
 #include <sgx_tcrypto.h>
 
+#include <stack>
+#include <vector>
+
+class BISGX_stack
+{
+	private:
+		std::stack<double> st;
+
+	public:
+		void push(double n) { st.push(n); }
+		int size() { return (int)st.size(); }
+		bool empty() { return st.empty(); }
+		double pop()
+		{
+			if(st.empty())
+			{
+				const char* message = "stack underflow.";
+				OCALL_print(message);
+			}
+
+			double d = st.top();
+			st.pop();
+
+			return d;
+		}
+};
+
 static const sgx_ec256_public_t def_service_public_key = {
     {
         0x72, 0x12, 0x8a, 0x7a, 0x17, 0x52, 0x6e, 0xbf,
