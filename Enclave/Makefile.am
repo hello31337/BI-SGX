@@ -62,6 +62,7 @@ ENCLAVE_KEY=$(ENCLAVE)_private.pem
 ## AM_CPPFLAGS += 
 ## AM_CXXFLAGS +=
 
+AM_CPPFLAGS += -I$(SGXSDK_INCDIR)/libcxx
 AM_CPPFLAGS += -I..
 
 ## Additional files to remove with 'make clean'. This list needs
