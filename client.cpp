@@ -68,6 +68,7 @@ using namespace std;
 #include "quote_size.h"
 
 #include <iostream>
+#include "error_print.hpp"
 
 #define MAX_LEN 80
 
@@ -145,7 +146,7 @@ void OCALL_print(const char* message)
 
 void OCALL_print_status(sgx_status_t st)
 {
-	cout << "Error status: " << hex << st << endl;
+	sgx_error_print(st);
 	return;
 }
 
@@ -510,6 +511,7 @@ int main (int argc, char *argv[])
 		}
 
 		cout << "RA completed. Receive secret data from SP... " << endl;
+
 		
 		int rv;
 		size_t sz;
@@ -644,14 +646,15 @@ int main (int argc, char *argv[])
 
 		if(intp_status != SGX_SUCCESS)
 		{
-			cerr << "App: fatal error: Failed to finish ECALL correctly." << endl;
+			sgx_error_print(intp_status);
 		}
 
 		cout << "Result from enclave: " << dec << ecall_output << endl;
 
-		enclave_ra_close(eid, &g_sgxrv, g_ra_ctx);
+		//enclave_ra_close(eid, &g_sgxrv, g_ra_ctx);
 	}
 
+	enclave_ra_close(eid, &g_sgxrv, g_ra_ctx);
      
 	close_logfile(fplog);
 }
