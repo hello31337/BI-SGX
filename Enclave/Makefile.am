@@ -75,7 +75,7 @@ CLEANFILES+= $(ENCLAVE)_t.c $(ENCLAVE)_t.h
 ## files. You can't use the $(ENCLAVE) variable in the build
 ## target name (i.e., $(ENCLAVE)_SOURCES will not work).
 
-Enclave_SOURCES = Enclave_t.c Enclave_t.h Enclave.cpp \
+Enclave_SOURCES = Enclave_t.c Enclave_t.h Enclave.cpp BISGX_lex.cpp \
 	$(ENCLAVE_KEY) $(ENCLAVE_CONFIG)
 
 

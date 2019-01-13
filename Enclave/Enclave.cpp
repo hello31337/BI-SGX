@@ -25,7 +25,9 @@ in the License.
 #include <sgx_tkey_exchange.h>
 #include <sgx_tcrypto.h>
 
-#include <BISGX_Enclave.h>
+#include "BISGX_Enclave.h"
+
+int BISGX_lex_main();
 
 static const sgx_ec256_public_t def_service_public_key = {
     {
@@ -211,8 +213,6 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char* code_ciphe
 		return status;
 	}
 	
-	/*Decrypt secret from SP*/
-	//unsigned char* p_iv = (unsigned char*)"000000000000"; //This is CRITICALLY BAD, but for simplicity in test
 	uint32_t p_iv_len = 12;
 	uint8_t intp_code[10000] = {'\0'};
 
@@ -226,8 +226,11 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char* code_ciphe
 	
 	//OCALL_dump(code_cipher_t, cipherlen);
 
+	int biret = BISGX_lex_main();
+
 	status = sgx_rijndael128GCM_decrypt(&sk_key, (uint8_t *)code_cipher, cipherlen,
 		intp_code, p_iv, p_iv_len, NULL, 0, &tag_t);
+
 
 	if(status != SGX_SUCCESS)
 	{

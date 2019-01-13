@@ -108,7 +108,7 @@ am__installdirs = "$(DESTDIR)$(libexecdir)"
 PROGRAMS = $(libexec_PROGRAMS)
 am__objects_1 =
 am_Enclave_OBJECTS = Enclave_t.$(OBJEXT) Enclave.$(OBJEXT) \
-	$(am__objects_1) $(am__objects_1)
+	BISGX_lex.$(OBJEXT) $(am__objects_1) $(am__objects_1)
 Enclave_OBJECTS = $(am_Enclave_OBJECTS)
 Enclave_DEPENDENCIES =
 @ENCLAVE_RELEASE_SIGN_FALSE@nodist_signed_enclave_debug_OBJECTS =  \
@@ -328,7 +328,7 @@ SGX_EDGER8R_FLAGS = --search-path ..
 ENCLAVE = Enclave
 ENCLAVE_CONFIG = $(ENCLAVE).config.xml
 ENCLAVE_KEY = $(ENCLAVE)_private.pem
-Enclave_SOURCES = Enclave_t.c Enclave_t.h Enclave.cpp \
+Enclave_SOURCES = Enclave_t.c Enclave_t.h Enclave.cpp BISGX_lex.cpp \
 	$(ENCLAVE_KEY) $(ENCLAVE_CONFIG)
 
 Enclave_LDADD = @SGX_ENCLAVE_LDADD@
@@ -420,6 +420,7 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/BISGX_lex.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/Enclave.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/Enclave_t.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/signed_enclave_debug.Po@am__quote@
