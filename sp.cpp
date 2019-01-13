@@ -64,6 +64,7 @@ using namespace std;
 #include <algorithm>
 #include <fstream>
 #include <sstream>
+#include <random>
 
 #ifdef _WIN32
 #define strdup(x) _strdup(x)
@@ -132,6 +133,8 @@ int encrypt_data_for_ISV(unsigned char *plaintext, int plaintext_len,
 	unsigned char *key, unsigned char *iv, unsigned char *ciphertext, uint8_t *tag);
 
 int base64_encrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen);
+
+uint8_t* generate_nonce(int sz);
 
 char debug = 0;
 char verbose = 0;
@@ -687,10 +690,13 @@ int main(int argc, char *argv[])
 
 			//Start encryption
 			unsigned char* sp_key = session.sk;
-			unsigned char* sp_iv = (unsigned char *)"000000000000";
+			unsigned char* sp_iv;
 			unsigned char intp_cipher[100000]; //intp_cipher[n];
 			int ciphertext_len, tag_len = 16;
 			uint8_t tag[16] = {'\0'};
+
+			cout << "Generate initialization vector." << endl;
+			sp_iv = generate_nonce(12);
 
 			ciphertext_len = encrypt_data_for_ISV(intp_plain, strlen((char*)intp_plain), sp_key, sp_iv, intp_cipher, tag);
 
@@ -718,6 +724,17 @@ int main(int argc, char *argv[])
 			cout << "Length of base64-ed cipher is: " << b64_len << endl << endl;
 			cout << "==========================================================" << endl;
 
+			/*Next, convert IV to base64 format*/
+			uint8_t ivb64[64] = {'\0'}; //maybe sufficient with 32-size
+			int ivb64dst_len = 64, ivb64_len;
+
+			ivb64_len = base64_encrypt(sp_iv, 12, ivb64, ivb64dst_len);
+
+			cout << "Base64 format of initialization vector is: " << endl;
+			cout << ivb64 << endl << endl;
+			cout << "Length of base64-ed IV is: " << ivb64_len << endl << endl;
+			cout << "==========================================================" << endl;
+
 			/*Also convert tag to base64 format*/
 			uint8_t tagb64[64] = {'\0'}; //maybe sufficient with 32-size
 			int tagb64dst_len = 64, tagb64_len;
@@ -728,7 +745,6 @@ int main(int argc, char *argv[])
 			cout << tagb64 << endl << endl;
 			cout << "Length of base64-ed tag is: " << tagb64_len << endl << endl;
 			cout << "==========================================================" << endl;
-
 			
 			/*In addition to that, need to convert cipher's length to base64*/
 			uint8_t deflenb64[128] = {'\0'}; 
@@ -749,30 +765,44 @@ int main(int argc, char *argv[])
 			/*Send base64-ed secret, its length, MAC tag and its length to ISV*/
 
 			/*cipher*/
+			cout << "==========================================================" << endl;
 			cout << "Send encrypted file to ISV." << endl;
 
-			cout << "Encrypted secret to sent in base64 is (display again): " << endl;
+			cout << "Encrypted secret to be sent in base64 is (display again): " << endl;
 			msgio->send(cipherb64, strlen((char*)cipherb64));
 
 			cout << "Complete sending message." << endl;
 			cout << "Please wait for 0.25 sec." << endl;
+			cout << "==========================================================" << endl;
+
+			usleep(250000);
+
+			/*IV*/
+			cout << "Initialization vector to be sent is: " << endl;
+			msgio->send(ivb64, strlen((char*)ivb64));
+
+			cout << "Complete sending IV." << endl;
+			cout << "Please wait for 0.25 sec." << endl;
+			cout << "==========================================================" << endl;
 
 			usleep(250000);
 			
 			/*MAC tag*/
-			cout << "Tag to send is: (display again)" << endl;
+			cout << "Tag to be sent is: (display again)" << endl;
 			msgio->send(tagb64, strlen((char*)tagb64));
 
 			cout << "Complete sending MAC tag." << endl;
 			cout << "Please wait for 0.25 sec." << endl;
+			cout << "==========================================================" << endl;
 
 			usleep(250000);
 
 			/*default cipher length*/
-			cout << "Default cipher's length to send is: " << endl;
+			cout << "Default cipher's length to be sent is: " << endl;
 			msgio->send(deflenb64, deflenb64_len);
 
 			cout << "Complete sending default cipher length." << endl;
+			cout << "==========================================================" << endl;
 			
 		}
 		//end block to avoid retarded goto error
@@ -1725,6 +1755,26 @@ int base64_encrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen)
 	
 	if(j<dstlen) dst[j] = '\0';
 	return j;
+}
+
+uint8_t* generate_nonce(int size)
+{
+	random_device rnd;
+	mt19937 mt(rnd());
+	uniform_int_distribution<> randchar(0, 255);
+
+	uint8_t* nonce_heap = new uint8_t[size];
+
+	for(int i = 0; i < size; i++)
+	{
+		nonce_heap[i] = (uint8_t)randchar(mt);
+	}
+
+	cout << "Generated nonce is: " << endl;
+	BIO_dump_fp(stdout, (const char*)nonce_heap, size);
+	cout << endl;
+
+	return nonce_heap;
 }
 
 #ifndef _WIN32

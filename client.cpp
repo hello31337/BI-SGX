@@ -516,12 +516,10 @@ int main (int argc, char *argv[])
 		int rv;
 		size_t sz;
 		void **received_cipher;
-		void **received_len;
+		void **received_iv;
 		void **received_tag;
-		void **received_taglen;
 		void **received_deflen;
-		void **received_deftaglen;
-		size_t cipherb64len, tagb64len, recvdeflen;
+		size_t cipherb64len, ivb64len, tagb64len, recvdeflen;
 
 		rv = msgio->read((void **) &received_cipher, &sz);
 
@@ -534,8 +532,21 @@ int main (int argc, char *argv[])
 		}
 
 		cipherb64len = sz / 2;
-		
 
+		
+		rv = msgio->read((void **) &received_iv, &sz);
+
+		if(rv == -1) {
+			eprintf("system error reading IV from SP\n");
+			return 0;
+		} else if ( rv == 0 ) {
+			eprintf("protocol error reading IV from SP\n");
+			return 0;
+		}
+
+		ivb64len = sz / 2;
+
+		
 		rv = msgio->read((void **) &received_tag, &sz);
 
 		if ( rv == -1 ) {
@@ -576,6 +587,11 @@ int main (int argc, char *argv[])
 		size_t cipherb64_len = strlen((char*)cipherb64);
 		cout << "Base64-ed cipher's length is: " << cipherb64_len << endl;
 
+		/*Next, obtain base64-ed IV*/
+		unsigned char *ivb64 = (unsigned char *) received_iv;
+		cout << "Received base64-ed IV is: " << endl;
+		cout << ivb64 << endl << endl;
+
 		/*Then obtain base64-ed MAC tag*/
 		unsigned char *tagb64 = (unsigned char *) received_tag;
 		cout << "Received base64-ed MAC tag is: " << endl;
@@ -598,6 +614,7 @@ int main (int argc, char *argv[])
 		uint8_t deflentmp[128] = {'\0'};
 		uint8_t deftaglentmp[32] = {'\0'};
 		uint8_t *cipher_to_enclave;
+		uint8_t iv_to_enclave[12];
 		uint8_t tag_to_enclave[16];
 
 		
@@ -619,6 +636,21 @@ int main (int argc, char *argv[])
 		cout << "Cipher decoded from base64 is: " << endl;
 		BIO_dump_fp(stdout, (const char*)cipher_to_enclave, cipherlen);
 
+		/*Decrypt iv from base64*/
+		int ivlen;
+		uint8_t iv_tmp[32] = {'\0'};
+
+		ivlen = base64_decrypt(ivb64, ivb64len, iv_tmp, 32);
+		
+		cout << "IV length is (must be 12): " << ivlen << endl;
+		cout << "IV decoded from base64 is: " << endl;
+		BIO_dump_fp(stdout, (const char*)iv_tmp, ivlen);
+
+		for(int i = 0; i < 12; i++)
+		{
+			iv_to_enclave[i] = iv_tmp[i];
+		}
+
 		/*Decrypt tag from base64*/
 		int taglen;
 		uint8_t tag_tmp[32] = {'\0'};
@@ -629,7 +661,7 @@ int main (int argc, char *argv[])
 		cout << "Tag decoded from base64 is: " << endl;
 		BIO_dump_fp(stdout, (const char*)tag_tmp, taglen);
 
-		for(i = 0; i < 16; i++)
+		for(int i = 0; i < 16; i++)
 		{
 			tag_to_enclave[i] = tag_tmp[i];
 		}
@@ -642,7 +674,7 @@ int main (int argc, char *argv[])
 		cout << hex << g_ra_ctx << endl;
 
 		sgx_status_t intp_status = run_interpreter(eid, &retval, g_ra_ctx, cipher_to_enclave,
-			(size_t)deflen, tag_to_enclave, &ecall_output);
+			(size_t)deflen, iv_to_enclave, tag_to_enclave, &ecall_output);
 
 		if(intp_status != SGX_SUCCESS)
 		{
