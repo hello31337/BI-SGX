@@ -51,7 +51,8 @@ enclave {
 		public sgx_status_t enclave_ra_close(sgx_ra_context_t ctx);
 
 		public sgx_status_t run_interpreter(sgx_ra_context_t context,
-			[user_check]unsigned char *code_cipher, size_t cipherlen, 
+			[user_check]unsigned char *code_cipher, size_t cipherlen,
+			[user_check]unsigned char *p_iv,
 			[user_check]unsigned char *tag, [out]int* result);
 
 	};
