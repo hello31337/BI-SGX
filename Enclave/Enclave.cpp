@@ -25,32 +25,7 @@ in the License.
 #include <sgx_tkey_exchange.h>
 #include <sgx_tcrypto.h>
 
-#include <stack>
-#include <vector>
-
-class BISGX_stack
-{
-	private:
-		std::stack<double> st;
-
-	public:
-		void push(double n) { st.push(n); }
-		int size() { return (int)st.size(); }
-		bool empty() { return st.empty(); }
-		double pop()
-		{
-			if(st.empty())
-			{
-				const char* message = "stack underflow.";
-				OCALL_print(message);
-			}
-
-			double d = st.top();
-			st.pop();
-
-			return d;
-		}
-};
+#include <BISGX_Enclave.h>
 
 static const sgx_ec256_public_t def_service_public_key = {
     {
@@ -220,7 +195,7 @@ sgx_status_t enclave_ra_close(sgx_ra_context_t ctx)
 }
 
 sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char* code_cipher,
-	size_t cipherlen, unsigned char *tag, int* result)
+	size_t cipherlen, unsigned char* p_iv, unsigned char *tag, int* result)
 {
 	sgx_status_t status = SGX_SUCCESS;
 	sgx_ec_key_128bit_t sk_key, mk_key;
@@ -237,17 +212,10 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char* code_ciphe
 	}
 	
 	/*Decrypt secret from SP*/
-	unsigned char* p_iv = (unsigned char*)"000000000000"; //This is CRITICALLY BAD, but for simplicity in test
-	uint32_t p_iv_len = strlen((char*)p_iv);
+	//unsigned char* p_iv = (unsigned char*)"000000000000"; //This is CRITICALLY BAD, but for simplicity in test
+	uint32_t p_iv_len = 12;
 	uint8_t intp_code[10000] = {'\0'};
-	//uint8_t *code_cipher_t = (uint8_t*)malloc(sizeof(uint8_t)*cipherlen);
 
-	/*
-	for(int i = 0; i < cipherlen; i++)
-	{
-		code_cipher_t[i] = code_cipher[i];
-	}
-	*/
 	
 	sgx_aes_gcm_128bit_tag_t tag_t;
 
@@ -259,7 +227,7 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char* code_ciphe
 	//OCALL_dump(code_cipher_t, cipherlen);
 
 	status = sgx_rijndael128GCM_decrypt(&sk_key, (uint8_t *)code_cipher, cipherlen,
-		intp_code, (uint8_t *)p_iv, p_iv_len, NULL, 0, &tag_t);
+		intp_code, p_iv, p_iv_len, NULL, 0, &tag_t);
 
 	if(status != SGX_SUCCESS)
 	{
