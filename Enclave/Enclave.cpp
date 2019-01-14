@@ -25,7 +25,7 @@ in the License.
 #include <sgx_tkey_exchange.h>
 #include <sgx_tcrypto.h>
 
-#include "BISGX_Enclave.h"
+#include "BISGX.h"
 
 int BISGX_lex_main();
 
