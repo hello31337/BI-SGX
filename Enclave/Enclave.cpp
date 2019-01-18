@@ -20,6 +20,7 @@ in the License.
 #endif
 #include "Enclave_t.h"
 #include <string.h>
+#include <string>
 #include <sgx_utils.h>
 #include <sgx_tae_service.h>
 #include <sgx_tkey_exchange.h>
@@ -27,7 +28,7 @@ in the License.
 
 #include "BISGX.h"
 
-int BISGX_lex_main();
+std::string BISGX_lex_main(std::string code);
 
 static const sgx_ec256_public_t def_service_public_key = {
     {
@@ -226,8 +227,6 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char* code_ciphe
 	
 	//OCALL_dump(code_cipher_t, cipherlen);
 
-	int biret = BISGX_lex_main();
-
 	status = sgx_rijndael128GCM_decrypt(&sk_key, (uint8_t *)code_cipher, cipherlen,
 		intp_code, p_iv, p_iv_len, NULL, 0, &tag_t);
 
@@ -245,6 +244,13 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char* code_ciphe
 		const char *message = (const char*)intp_code;
 		OCALL_print(message);
 	}
+
+	std::string intp_str(reinterpret_cast<char*>(intp_code));
+
+	std::string intp_result = BISGX_lex_main(intp_str);
+	
+	OCALL_print("\nlexical analysis result:");
+	OCALL_print(intp_result.c_str());
 	
 	*result = 1000;
 
