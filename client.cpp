@@ -68,6 +68,7 @@ using namespace std;
 #include "quote_size.h"
 
 #include <iostream>
+#include <random>
 #include "error_print.hpp"
 
 #define MAX_LEN 80
@@ -156,9 +157,27 @@ void OCALL_print_int(int num)
 	return;
 }
 
-void OCALL_dump(uint8_t *char_to_dump, int size)
+void OCALL_dump(uint8_t *char_to_dump, int bufsize)
 {
-	BIO_dump_fp(stdout, (const char*)char_to_dump, size);
+	BIO_dump_fp(stdout, (const char*)char_to_dump, bufsize);
+	return;
+}
+
+void OCALL_generate_nonce(uint8_t* ivbuf, int bufsize)
+{
+	random_device rnd;
+	mt19937 mt(rnd());
+	uniform_int_distribution<> randchar(0, 255);
+
+	for(int i = 0; i < bufsize; i++)
+	{
+		ivbuf[i] = (uint8_t)randchar(mt);
+	}
+
+	cout << "Generated nonce is:" << endl;
+	BIO_dump_fp(stdout, (const char*)ivbuf, bufsize);
+	cout << endl;
+
 	return;
 }
 

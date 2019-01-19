@@ -240,17 +240,30 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char* code_ciphe
 	}
 
 	{
-		OCALL_print_int((int)sizeof(intp_code));
+		//OCALL_print_int((int)sizeof(intp_code));
 		const char *message = (const char*)intp_code;
 		OCALL_print(message);
 	}
 
 	std::string intp_str(reinterpret_cast<char*>(intp_code));
 
+	/*Call interpreter*/
 	std::string intp_result = BISGX_lex_main(intp_str);
 	
 	OCALL_print("\nlexical analysis result:");
 	OCALL_print(intp_result.c_str());
+
+	/*processes for encrypt result*/
+	uint8_t result_str[20000] = {'\0'};
+	//uint8_t res_iv[12] = {'\0'};
+	uint8_t res_iv[12] = {'\0'};
+
+	OCALL_generate_nonce(res_iv, 12);
+	
+	OCALL_print("\nIV generation/passing check: \n");
+	OCALL_dump(res_iv, 12);
+
+	//status = sgx_rijndael128GCM_encrypt(&sk_key, NULL, 0, &tag_t);
 	
 	*result = 1000;
 
