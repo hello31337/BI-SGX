@@ -385,7 +385,7 @@ void sgx_error_print(sgx_status_t status)
 			break;
 	
 		default:
-			std::cerr << "Unrecognized SGX status format." << std::endl;
+			std::cerr << "Unrecognized SGX status code." << std::endl;
 	}
 
 	std::cerr << "==================================================================================" << std::endl;
