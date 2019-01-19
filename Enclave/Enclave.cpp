@@ -255,7 +255,6 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char* code_ciphe
 
 	/*processes for encrypt result*/
 	uint8_t result_str[20000] = {'\0'};
-	//uint8_t res_iv[12] = {'\0'};
 	uint8_t res_iv[12] = {'\0'};
 
 	OCALL_generate_nonce(res_iv, 12);
