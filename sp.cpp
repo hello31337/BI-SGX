@@ -132,7 +132,12 @@ int get_proxy(char **server, unsigned int *port, const char *url);
 int encrypt_data_for_ISV(unsigned char *plaintext, int plaintext_len,
 	unsigned char *key, unsigned char *iv, unsigned char *ciphertext, uint8_t *tag);
 
+int decrypt_cipher_from_ISV(uint8_t *ciphertext, int ciphertext_len, uint8_t *key,
+	uint8_t *iv, int iv_len, uint8_t *tag, uint8_t *plaintext);
+
 int base64_encrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen);
+
+int base64_decrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen);
 
 uint8_t* generate_nonce(int sz);
 
@@ -691,13 +696,14 @@ int main(int argc, char *argv[])
 			//Start encryption
 			unsigned char* sp_key = session.sk;
 			unsigned char* sp_iv;
-			unsigned char intp_cipher[100000]; //intp_cipher[n];
+			unsigned char intp_cipher[200000]; //intp_cipher[n];
 			int ciphertext_len, tag_len = 16;
 			uint8_t tag[16] = {'\0'};
 
 			cout << "Generate initialization vector." << endl;
 			sp_iv = generate_nonce(12);
 
+			/*AES/GCM's cipher length is equal to the length of plain text*/
 			ciphertext_len = encrypt_data_for_ISV(intp_plain, strlen((char*)intp_plain), sp_key, sp_iv, intp_cipher, tag);
 
 			if(ciphertext_len == -1)
@@ -712,8 +718,8 @@ int main(int argc, char *argv[])
 			BIO_dump_fp(stdout, (const char*)intp_cipher, ciphertext_len);
 
 			/*convert data to base64 for sending with msgio correctly*/
-			uint8_t cipherb64[150000] = {'\0'};
-			int b64dst_len = 150000, b64_len;
+			uint8_t cipherb64[300000] = {'\0'};
+			int b64dst_len = 300000, b64_len;
 
 			b64_len = base64_encrypt(intp_cipher, ciphertext_len, cipherb64, b64dst_len);
 
@@ -803,7 +809,169 @@ int main(int argc, char *argv[])
 
 			cout << "Complete sending default cipher length." << endl;
 			cout << "==========================================================" << endl;
+
+
+			/*Receive result contexts from ISV*/
+			int rv;
+			size_t sz;
+			void **received_cipher;
+			void **received_iv;
+			void **received_tag;
+			void **received_deflen;
+			size_t rcipherb64_len, rivb64_len, rtagb64_len, rdeflenb64_len; 
+
+
+			cout << "\nWaiting for results from ISV..." << endl;
+
+			rv = msgio->read((void **) &received_cipher, &sz);
+
+			if ( rv == -1 ) {
+				eprintf("system error reading secret from SP\n");
+				return 0;
+			} else if ( rv == 0 ) {
+				eprintf("protocol error reading secret from SP\n");
+				return 0;
+			}
+
+			rcipherb64_len = sz / 2;
+
 			
+			rv = msgio->read((void **) &received_iv, &sz);
+
+			if(rv == -1) {
+				eprintf("system error reading IV from SP\n");
+				return 0;
+			} else if ( rv == 0 ) {
+				eprintf("protocol error reading IV from SP\n");
+				return 0;
+			}
+
+			rivb64_len = sz / 2;
+
+			
+			rv = msgio->read((void **) &received_tag, &sz);
+
+			if ( rv == -1 ) {
+				eprintf("system error reading MAC tag from SP\n");
+				return 0;
+			} else if ( rv == 0 ) {
+				eprintf("protocol error reading MAC tag from SP\n");
+				return 0;
+			}
+
+			rtagb64_len = sz / 2;
+
+			
+			rv = msgio->read((void **) &received_deflen, &sz);
+
+			if ( rv == -1 ) {
+				eprintf("system error reading default cipher length from SP\n");
+				return 0;
+			} else if ( rv == 0 ) {
+				eprintf("protocol error reading default cipher length from SP\n");
+				return 0;
+			}
+
+			rdeflenb64_len = sz / 2;
+
+			/*obtain result contexts from received void* buffers*/
+			uint8_t *rcipherb64 = (uint8_t *) received_cipher;
+			uint8_t *rivb64 	= (uint8_t *) received_iv;
+			uint8_t *rtagb64 	= (uint8_t *) received_tag;
+			uint8_t *rdeflenb64 = (uint8_t *) received_deflen;
+
+			/*value check*/
+			cout << "Received base64-ed result cipher is: " << endl;
+			cout << rcipherb64 << endl << endl;
+
+			cout << "Received base64-ed result IV is: " << endl;
+			cout << rivb64 << endl << endl;
+
+			cout << "Received base64-ed result MAC tag is: " << endl;
+			cout << rtagb64 << endl << endl;
+
+			cout << "Received base64-ed result cipher length is: " << endl;
+			cout << rdeflenb64 << endl << endl;
+
+			/*decode result contexts from base64*/
+			int result_deflen, rettmp;
+			uint8_t *result_cipher;
+			uint8_t result_iv_tmp[32] = {'\0'};
+			uint8_t result_tag_tmp[32] = {'\0'};
+			uint8_t result_deflen_tmp[128] = {'\0'};
+
+			/*Result cipher length*/
+			rettmp = base64_decrypt(rdeflenb64, rdeflenb64_len, result_deflen_tmp, 128);
+			result_deflen = strtol((char*)result_deflen_tmp, NULL, 10);
+
+			/*Result cipher*/
+			result_cipher = new uint8_t[rcipherb64_len];
+			int rcipher_len;
+
+			rcipher_len = base64_decrypt(rcipherb64, rcipherb64_len, result_cipher, rcipherb64_len);
+
+			/*Result IV*/
+			int riv_len;
+			riv_len = base64_decrypt(rivb64, rivb64_len, result_iv_tmp, 32);
+
+			/*Result tag*/
+			int rtag_len;
+			rtag_len = base64_decrypt(rtagb64, rtagb64_len, result_tag_tmp, 32);
+
+
+			/*Value check*/
+			cout << "\nResult cipher length is: " << result_deflen << endl << endl;
+
+			cout << "Result cipher is: " << endl;
+			BIO_dump_fp(stdout, (const char*)result_cipher, result_deflen);
+			cout << endl;
+
+			cout << "Result IV is: " << endl;
+			BIO_dump_fp(stdout, (const char*)result_iv_tmp, 12);
+			cout << endl;
+
+			cout << "Result MAC tag is: " << endl;
+			BIO_dump_fp(stdout, (const char*)result_tag_tmp, 16);
+			cout << endl;
+
+			uint8_t result_iv[12];
+			uint8_t result_tag[16];
+
+			for(int i = 0; i < 12; i++)
+			{
+				result_iv[i] = result_iv_tmp[i];
+			}
+
+			for(int i = 0; i < 16; i++)
+			{
+				result_tag[i] = result_tag_tmp[i];
+			}
+			
+			/*Decrypt result*/
+			uint8_t result[200000];
+			int result_len;
+			
+			result_len = decrypt_cipher_from_ISV(result_cipher, result_deflen, sp_key, 
+				result_iv, 12, result_tag, result);
+
+			if(result_len == -1)
+			{
+				cerr << "Verification error while decryption." << endl << endl;
+			}
+			else
+			{
+				cout << "Decrypted result successfully." << endl;
+				cout << "Received result is: " << endl;
+				
+				cout << "==============================================" << endl;
+				cout << result << endl;
+				cout << "==============================================" << endl;
+				cout << endl;
+
+				ofstream result_output("result.dat", ios::trunc);
+				result_output << result << endl;
+				result_output.close();
+			}
 		}
 		//end block to avoid retarded goto error
 
@@ -1722,6 +1890,80 @@ int encrypt_data_for_ISV(unsigned char *plaintext, int plaintext_len,
 	return ciphertext_len;
 }
 
+int decrypt_cipher_from_ISV(uint8_t *ciphertext, int ciphertext_len, uint8_t *key,
+	uint8_t *iv, int iv_len, uint8_t *tag, uint8_t *plaintext)
+{
+	EVP_CIPHER_CTX *ctx;
+	int len;
+	int plaintext_len;
+	int ret;
+
+	/* Create and initialise the context */
+	if(!(ctx = EVP_CIPHER_CTX_new()))
+	{
+		ERR_print_errors_fp(stderr);
+		return -1;
+	}
+
+	/* Initialise the decryption operation. */
+	if(!EVP_DecryptInit_ex(ctx, EVP_aes_128_gcm(), NULL, NULL, NULL))
+	{
+		ERR_print_errors_fp(stderr);
+		return -1;
+	}
+
+	/* Set IV length. Not necessary if this is 12 bytes (96 bits) */
+	if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv_len, NULL))
+	{
+		ERR_print_errors_fp(stderr);
+		return -1;
+	}
+
+	/* Initialise key and IV */
+	if(!EVP_DecryptInit_ex(ctx, NULL, NULL, key, iv))
+	{
+		ERR_print_errors_fp(stderr);
+		return -1;
+	}
+
+	/* Provide the message to be decrypted, and obtain the plaintext output.
+	 * EVP_DecryptUpdate can be called multiple times if necessary
+	 */
+	if(!EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len))
+	{
+		ERR_print_errors_fp(stderr);
+		return -1;
+	}
+	plaintext_len = len;
+
+	/* Set expected tag value. Works in OpenSSL 1.0.1d and later */
+	if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, tag))
+	{
+		ERR_print_errors_fp(stderr);
+		return -1;
+	}
+
+	/* Finalise the decryption. A positive return value indicates success,
+	 * anything else is a failure - the plaintext is not trustworthy.
+	 */
+	ret = EVP_DecryptFinal_ex(ctx, plaintext + len, &len);
+
+	/* Clean up */
+	EVP_CIPHER_CTX_free(ctx);
+
+	if(ret > 0)
+	{
+		/* Success */
+		plaintext_len += len;
+		return plaintext_len;
+	}
+	else
+	{
+		/* Verify failed */
+		return -1;
+	}
+}
+
 /*referred: https://ryozi.hatenadiary.jp/entry/20101203/1291380670 in 12/30/2018*/
 int base64_encrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen)
 {
@@ -1756,6 +1998,46 @@ int base64_encrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen)
 	if(j<dstlen) dst[j] = '\0';
 	return j;
 }
+
+int base64_decrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen)
+{
+	const unsigned char Base64num[] = {
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0x3E,0xFF,0xFF,0xFF,0x3F,
+		0x34,0x35,0x36,0x37,0x38,0x39,0x3A,0x3B,0x3C,0x3D,0xFF,0xFF,0xFF,0x00,0xFF,0xFF,
+		0xFF,0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x0C,0x0D,0x0E,
+		0x0F,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0x1A,0x1B,0x1C,0x1D,0x1E,0x1F,0x20,0x21,0x22,0x23,0x24,0x25,0x26,0x27,0x28,
+		0x29,0x2A,0x2B,0x2C,0x2D,0x2E,0x2F,0x30,0x31,0x32,0x33,0xFF,0xFF,0xFF,0xFF,0xFF,
+		
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+	};
+	int calclength = (srclen/4*3);
+	int i,j;
+	if(calclength > dstlen || srclen % 4 != 0) return 0;
+	
+	j=0;
+	for(i=0; i+3<srclen; i+=4){
+		if((Base64num[src[i+0]]|Base64num[src[i+1]]|Base64num[src[i+2]]|Base64num[src[i+3]]) > 0x3F){
+			return -1;
+		}
+		dst[j++] = Base64num[src[i+0]]<<2 | Base64num[src[i+1]] >> 4;
+		dst[j++] = Base64num[src[i+1]]<<4 | Base64num[src[i+2]] >> 2;
+		dst[j++] = Base64num[src[i+2]]<<6 | Base64num[src[i+3]];
+	}
+	
+	if(j<dstlen) dst[j] = '\0';
+	return j;
+}
+
 
 uint8_t* generate_nonce(int size)
 {

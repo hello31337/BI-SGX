@@ -153,7 +153,7 @@ void OCALL_print_status(sgx_status_t st)
 
 void OCALL_print_int(int num)
 {
-	cout << "OCALL_INT_PRINT: " << num << endl;
+	cout << "OCALL_INT_PRINT: " << dec<< num << endl;
 	return;
 }
 
@@ -180,6 +180,42 @@ void OCALL_generate_nonce(uint8_t* ivbuf, int bufsize)
 
 	return;
 }
+
+/*referred: https://ryozi.hatenadiary.jp/entry/20101203/1291380670 in 12/30/2018*/
+int base64_encrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen)
+{
+	const char Base64char[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	int i,j;
+	int calclength = (srclen/3*4) + (srclen%3?4:0);
+	if(calclength > dstlen) return -1;
+	
+	j=0;
+	for(i=0; i+2<srclen; i+=3){
+		dst[j++] = Base64char[ (src[i] >> 2) & 0x3F ];
+		dst[j++] = Base64char[ (src[i] << 4 | src[i+1] >> 4) & 0x3F ];
+		dst[j++] = Base64char[ (src[i+1] << 2 | src[i+2] >> 6) & 0x3F ];
+		dst[j++] = Base64char[ (src[i+2]) & 0x3F ];
+	}
+	
+	if(i<srclen){
+		dst[j++] = Base64char[ (src[i] >> 2) & 0x3F ];
+		if(i+1<srclen){
+			dst[j++] = Base64char[ (src[i] << 4 | src[i+1] >> 4) & 0x3F ];
+			if(i+2<srclen){
+				dst[j++] = Base64char[ (src[i+1] << 2 | src[i+2] >> 6) & 0x3F ];
+			}else{
+				dst[j++] = Base64char[ (src[i+1] << 2) & 0x3F ];
+			}
+		}else{
+			dst[j++] = Base64char[ (src[i] << 4) & 0x3F ];
+		}
+	}
+	while(j%4) dst[j++] = '=';
+	
+	if(j<dstlen) dst[j] = '\0';
+	return j;
+}
+
 
 int base64_decrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen)
 {
@@ -687,21 +723,116 @@ int main (int argc, char *argv[])
 
 		cout << "Execute ECALL with passing cipher data." << endl;
 
-		int ecall_output = -2000;
+		uint8_t result_cipher[10000] = {'\0'};
+		size_t result_len = -9999;
 		sgx_status_t retval;
 
 		cout << hex << g_ra_ctx << endl;
 
 		sgx_status_t intp_status = run_interpreter(eid, &retval, g_ra_ctx, cipher_to_enclave,
-			(size_t)deflen, iv_to_enclave, tag_to_enclave, &ecall_output);
+			(size_t)deflen, iv_to_enclave, tag_to_enclave, result_cipher, &result_len);
 
 		if(intp_status != SGX_SUCCESS)
 		{
 			sgx_error_print(intp_status);
 		}
 
-		cout << "Result from enclave: " << dec << ecall_output << endl;
+		cout << "\nExited ECALL successfully. Check the returned data." << endl;
+		cout << "Result from enclave: " << dec << result_len << endl << endl;
 
+		cout << "Cipher: " << endl;
+		BIO_dump_fp(stdout, (const char*)result_cipher, result_len);
+
+		cout << "\nIV: " << endl;
+		BIO_dump_fp(stdout, (const char*)iv_to_enclave, 12);
+
+		cout << "\nTag: " << endl;
+		BIO_dump_fp(stdout, (const char*)tag_to_enclave, 16);
+
+
+		/*Convert result contexts to base64 format*/
+		uint8_t* res_cipherb64 = new uint8_t[result_len * 2];
+		uint8_t res_ivb64[64] = {'\0'};
+		uint8_t res_tagb64[64] = {'\0'};
+		uint8_t res_deflenb64[128] = {'\0'};
+		int res_cipherb64_len, res_ivb64_len, res_tagb64_len, res_deflenb64_len;
+
+		/*Encode result cipher*/
+		res_cipherb64_len = base64_encrypt(result_cipher, result_len,
+					res_cipherb64, result_len * 2);
+
+		/*Encode result IV*/
+		res_ivb64_len = base64_encrypt(iv_to_enclave, 12, res_ivb64, 64);
+
+		/*Encode result MAC tag*/
+		res_tagb64_len = base64_encrypt(tag_to_enclave, 16, res_tagb64, 64);
+
+		/*Encode result cipher's length*/
+		uint8_t *resdeflentmp = 
+			const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(to_string(result_len).c_str()));
+
+		res_deflenb64_len = 
+			base64_encrypt(resdeflentmp, strlen((char*)resdeflentmp), res_deflenb64, 128);
+
+
+		/*Base64 value check*/
+		cout << "========================================================================" << endl;
+		cout << "result cipher in base64: " << endl;
+		cout << res_cipherb64 << endl;
+		cout << "========================================================================" << endl;
+		cout << "result IV in base64: " << endl;
+		cout << res_ivb64 << endl;
+		cout << "========================================================================" << endl;
+		cout << "result tag in base64: " << endl;
+		cout << res_tagb64 << endl;
+		cout << "========================================================================" << endl;
+		cout << "result cipher's length in base64" << endl;
+		cout << res_deflenb64 << endl;
+		cout << "========================================================================" << endl;
+		cout << endl;
+
+		/*send base64-ed result cipher to SP*/
+		cout << "========================================================================" << endl;
+		cout << "Send encrypted result to SP." << endl;
+		
+		cout << "Encrypted result to be sent is: " << endl;
+		msgio->send(res_cipherb64, strlen((char*)res_cipherb64));
+
+		cout << "Complete sending message." << endl;
+		cout << "Please wait for 0.25 sec." << endl;
+		cout << "========================================================================" << endl;
+
+		usleep(250000);
+
+		/*send base64-ed IV to SP*/
+		cout << "IV to be sent is: " << endl;
+		msgio->send(res_ivb64, strlen((char*)res_ivb64));
+
+		cout << "Complete sending message." << endl;
+		cout << "Please wait for 0.25 sec." << endl;
+		cout << "========================================================================" << endl;
+		
+		usleep(250000);
+
+		/*send base64-ed MAC tag to SP*/
+		cout << "Tag to be sent is: " << endl;
+		msgio->send(res_tagb64, strlen((char*)res_tagb64));
+
+		cout << "Complete sending message." << endl;
+		cout << "Please wait for 0.25 sec." << endl;
+		cout << "========================================================================" << endl;
+
+		usleep(250000);
+
+		/*send base64-ed result cipher length to SP*/
+		cout << "Result cipher's length to be sent is: " << endl;
+		msgio->send(res_deflenb64, strlen((char*)res_deflenb64));
+
+		cout << "Complete sending message." << endl;
+		cout << "Please wait for 0.25 sec." << endl;
+		cout << "========================================================================" << endl;
+		
+		cout << "Complete sending result contexts to SP." << endl << endl;
 		//enclave_ra_close(eid, &g_sgxrv, g_ra_ctx);
 	}
 

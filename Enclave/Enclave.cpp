@@ -21,6 +21,7 @@ in the License.
 #include "Enclave_t.h"
 #include <string.h>
 #include <string>
+#include <cstdlib>
 #include <sgx_utils.h>
 #include <sgx_tae_service.h>
 #include <sgx_tkey_exchange.h>
@@ -197,8 +198,9 @@ sgx_status_t enclave_ra_close(sgx_ra_context_t ctx)
         return ret;
 }
 
-sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char* code_cipher,
-	size_t cipherlen, unsigned char* p_iv, unsigned char *tag, int* result)
+sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_cipher,
+	size_t cipherlen, unsigned char *p_iv, unsigned char *tag, 
+	unsigned char *res_cipher, size_t *res_len)
 {
 	sgx_status_t status = SGX_SUCCESS;
 	sgx_ec_key_128bit_t sk_key, mk_key;
@@ -254,17 +256,41 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char* code_ciphe
 	OCALL_print(intp_result.c_str());
 
 	/*processes for encrypt result*/
-	uint8_t result_str[20000] = {'\0'};
+	uint8_t *intp_res_char;
+	//uint8_t *res_cipher;
 	uint8_t res_iv[12] = {'\0'};
 
-	OCALL_generate_nonce(res_iv, 12);
+	intp_res_char = reinterpret_cast<uint8_t*>
+		(const_cast<char*>(intp_result.c_str()));
 	
-	OCALL_print("\nIV generation/passing check: \n");
-	OCALL_dump(res_iv, 12);
+	*res_len = std::strlen((const char*)intp_res_char);
 
-	//status = sgx_rijndael128GCM_encrypt(&sk_key, NULL, 0, &tag_t);
+	OCALL_generate_nonce(res_iv, 12);
+
+	/*AES/GCM's cipher length is equal to the length of plain text*/
+	status = sgx_rijndael128GCM_encrypt(&sk_key, intp_res_char, *res_len,
+		res_cipher, res_iv, 12, NULL, 0, &tag_t);
+
 	
-	*result = 1000;
+	for(int i = 0; i < 16; i++)
+	{
+		tag[i] = tag_t[i];
+	}
+
+	for(int i = 0; i < 12; i++)
+	{
+		p_iv[i] = res_iv[i];
+	}
+
+	OCALL_print("\nStart context check before exit ECALL.\n");
+	OCALL_print("Cipher: ");
+	OCALL_dump(res_cipher, *res_len);
+	OCALL_print("\nIV: ");
+	OCALL_dump(p_iv, 12);
+	OCALL_print("\nTag: ");
+	OCALL_dump(tag, 16);
+	OCALL_print("\nResult cipher length: ");
+	OCALL_print_int((int)*res_len);
 
 	return SGX_SUCCESS;
 }
