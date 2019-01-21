@@ -651,7 +651,7 @@ int main(int argc, char *argv[])
 		cout << endl << "Continue processing data. Enter any key to continue: " << endl;
 		getchar();
 		
-		//to avoid fucking compile error caused by retaded goto sentence
+		//to avoid compile error caused by goto sentence
 		{
 			ifstream fin_intp;
 			string intp_filename, intp_str;
@@ -973,7 +973,7 @@ int main(int argc, char *argv[])
 				result_output.close();
 			}
 		}
-		//end block to avoid retarded goto error
+		//end block to avoid goto error
 
 disconnect:
 		msgio->disconnect();
