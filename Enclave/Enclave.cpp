@@ -271,6 +271,13 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_ciphe
 	status = sgx_rijndael128GCM_encrypt(&sk_key, intp_res_char, *res_len,
 		res_cipher, res_iv, 12, NULL, 0, &tag_t);
 
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print("Error while encrypting result.");
+		OCALL_print_status(status);
+		return status;
+	}
+
 	
 	for(int i = 0; i < 16; i++)
 	{
