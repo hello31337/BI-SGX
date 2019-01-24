@@ -135,6 +135,8 @@ void Blex::BufferInit(std::string code)
 
 	endOfFile_F = false;
 	srcLineno = 0;
+
+	OCALL_print("BufferInit complete.");
 }
 
 void Blex::nextLine()
@@ -155,10 +157,17 @@ void Blex::nextLine()
 
 	for(int i = 0; i < LIN_SIZ + 5; i++)
 	{
-		buf[i] = inputstr[strindex];
-		strindex++;
-
-		if(buf[i] == '\n') break;
+		if(inputstr[strindex] == '\n')
+		{
+			buf[i] = '\0';
+			strindex++;
+			break;
+		}
+		else
+		{
+			buf[i] = inputstr[strindex];
+			strindex++;
+		}
 	}
 
 	if(std::strlen(buf) > LIN_SIZ)
@@ -175,6 +184,12 @@ void Blex::nextLine()
 	token_p = buf;
 }
 
+Token Blex::nextLine_tkn()
+{
+	nextLine();
+	return nextTkn();
+}
+
 #define CH (*token_p)
 #define C2 (*(token_p+1))
 #define NEXT_CH() ++token_p;
@@ -184,7 +199,7 @@ Token Blex::nextTkn()
 	TknKind kd;
 	std::string txt = "";
 
-	if(strindex >= istr_len)
+	if(endOfFile_F)
 	{
 		return Token(EofProg);
 	}

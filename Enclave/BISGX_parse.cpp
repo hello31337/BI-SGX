@@ -13,6 +13,14 @@ namespace Bcode
 	extern std::vector<char*> intercode;
 }
 
+namespace Blex
+{
+	extern void initChTyp();
+	extern void BufferInit(std::string code);
+	extern Token nextTkn();
+	extern Token nextLine_tkn();
+}
+
 namespace Bparse
 {
 	/*Global vals*/
@@ -25,10 +33,12 @@ namespace Bparse
 	bool fncDecl_F;
 	bool explicit_F;
 	char codebuf[LIN_SIZ+1], *codebuf_p;
+	std::string parser_error_msg = "";
 
 	/*protos*/
 	void init();
 	void convert_to_internalCode(std::string code);
+	/*
 	void convert();
 	void convert_block_set();
 	void convert_block();
@@ -37,8 +47,58 @@ namespace Bparse
 	void varDecl();
 	void var_nameChk(const Token &tk);
 	void set_name();
-
+	void set_aryLen();
+	void fncDecl();
+	void backPatch(int line, int n);
+	void setCode(int cd);
+	int setCode(int cd, int nbr);
+	void setCode_rest();
+	void setCode_End();
+	void setCode_EofLine();
+	void push_intercode();
+	void is_localScope();
+	*/
 }
 
+void Bparse::init()
+{
+	Blex::initChTyp();
+	mainTblNbr = -1;
+	blkNest = loopNest = 0;
+	fncDecl_F = explicit_F = false;
+	codebuf_p = codebuf;
+}
 
+void Bparse::convert_to_internalCode(std::string code)
+{
+	init();
 
+	Blex::BufferInit(code);
+
+	while(token = Blex::nextLine_tkn(), token.kind != EofProg)
+	{
+		if(token.kind == Func)
+		{
+			token = Blex::nextTkn();
+			//set_name();
+			//enter(tmpTb, fncId);
+		}
+		OCALL_print(token.text.c_str());
+	}
+
+	//Must call BufferInit again
+}
+
+/*
+void Bparse::set_name()
+{
+	if(token.kind != Ident)
+	{
+		parser_error_msg = "Identifier is needed.";
+		return;
+	}
+	tmpTb.clear();
+	tmpTb.name = token.text;
+	token = Blex::nextTkn();
+}
+*/
