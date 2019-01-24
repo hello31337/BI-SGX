@@ -20,7 +20,6 @@ in the License.
 #endif
 #include "Enclave_t.h"
 #include <string.h>
-#include <string>
 #include <cstdlib>
 #include <sgx_utils.h>
 #include <sgx_tae_service.h>
@@ -30,6 +29,12 @@ in the License.
 #include "BISGX.h"
 
 std::string BISGX_lex_main(std::string code);
+
+namespace Blex
+{
+	extern void BufferInit(std::string code);
+	extern void nextLine();
+}
 
 static const sgx_ec256_public_t def_service_public_key = {
     {
@@ -250,7 +255,10 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_ciphe
 	std::string intp_str(reinterpret_cast<char*>(intp_code));
 
 	/*Call interpreter*/
-	std::string intp_result = BISGX_lex_main(intp_str);
+	//std::string intp_result = BISGX_lex_main(intp_str);
+	Blex::BufferInit(intp_str);
+	Blex::nextLine();
+	std::string intp_result = "Under construction";
 	
 	OCALL_print("\nlexical analysis result:");
 	OCALL_print(intp_result.c_str());
