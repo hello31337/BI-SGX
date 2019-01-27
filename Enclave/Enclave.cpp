@@ -28,7 +28,8 @@ in the License.
 
 #include "BISGX.h"
 
-extern std::string BISGX_lex_main(std::string code);
+extern std::string BISGX_main(std::string code,
+			bool *error_flag, std::string *error_msg);
 
 namespace Blex
 {
@@ -260,11 +261,18 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_ciphe
 	std::string intp_str(reinterpret_cast<char*>(intp_code));
 
 	/*Call interpreter*/
-	//std::string intp_result = BISGX_lex_main(intp_str);
-	Bparse::convert_to_internalCode(intp_str);
-	std::string intp_result = "Under construction";
+	bool intp_error_flag = false;
+	std::string intp_error_msg = "";
+	std::string intp_result;
+
+	intp_result = BISGX_main(intp_str, &intp_error_flag, &intp_error_msg);
 	
-	OCALL_print("\nlexical analysis result:");
+	if(intp_error_flag == true)
+	{
+		intp_result = intp_error_msg;
+	}
+
+	OCALL_print("\ninterpreter execution result:");
 	OCALL_print(intp_result.c_str());
 
 	/*processes for encrypt result*/

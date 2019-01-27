@@ -36,7 +36,6 @@ namespace Blex
 	std::string inputstr;
 	int strindex = 0;
 	int istr_len = 0;
-	std::string lexer_error_msg = "";
 
 	struct KeyWord
 	{
@@ -172,12 +171,11 @@ void Blex::nextLine()
 
 	if(std::strlen(buf) > LIN_SIZ)
 	{
-		lexer_error_msg = "Only 255 or less chars are allowed par single code line.";
-		return;
+		throw std::string("Only 255 or less chars are allowed par single code line.");
 	}
 	if(++srcLineno > MAX_LINE)
 	{
-		lexer_error_msg = "Input Program exceeded max line limit.";
+		throw std::string("Input Program exceeded max line limit.");
 		return;
 	}
 
@@ -263,8 +261,9 @@ Token Blex::nextTkn()
 			}
 			else
 			{
-				std::string error_msg("String literal is not properly closed by Double Quote.\n");
-				return Token(Error, error_msg);
+				//std::string error_msg("String literal is not properly closed by Double Quote.\n");
+				throw std::string("String literal is not properly closed by Double Quotation.");
+				//return Token(Error, error_msg);
 			}
 
 			return Token(String, txt);
@@ -290,8 +289,11 @@ Token Blex::nextTkn()
 
 	if(kd == Others)
 	{
+		/*
 		std::string error_msg("Illegal token is detected.\n");
 		return Token(Error, error_msg);
+		*/
+		throw std::string("Illegal token is detected.");
 	}
 
 	return Token(kd, txt);
@@ -331,8 +333,11 @@ Token Blex::chk_nextTkn(const Token &tk, int kind2)
 {
 	if(tk.kind != kind2)
 	{
+		/*
 		std::string error_msg = "Illegal token kind.";
 		return Token(Error, error_msg);
+		*/
+		throw std::string("Illegal token kind.");
 	}
 
 	return nextTkn();
