@@ -605,12 +605,12 @@ int main (int argc, char *argv[])
 		rv = msgio->read((void **) &received_tag, &sz);
 
 		if ( rv == -1 ) {
-            eprintf("system error reading MAC tag from SP\n");
-            return 0;
-        } else if ( rv == 0 ) {
-            eprintf("protocol error reading MAC tag from SP\n");
-            return 0;
-        }
+			eprintf("system error reading MAC tag from SP\n");
+			return 0;
+		} else if ( rv == 0 ) {
+			eprintf("protocol error reading MAC tag from SP\n");
+			return 0;
+		}
 
 		tagb64len = sz / 2;
 
