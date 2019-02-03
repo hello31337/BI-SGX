@@ -150,8 +150,7 @@ int Btable::searchName(const std::string &s, int mode)
 		case 'V':
 			if(searchName(s, 'F') != -1)
 			{
-				std::string error_msg = 
-					"Duplicated variable name with function name: ";
+				std::string error_msg = "Duplicated variable name with function name: ";
 
 				error_msg += s;
 

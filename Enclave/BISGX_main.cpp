@@ -23,6 +23,13 @@ std::string BISGX_main(std::string code,
 
 		return std::string("Error");
 	}
+	catch(std::bad_alloc)
+	{
+		*error_flag = true;
+		*error_msg = "Failed to allocate memory.";
+
+		return std::string("Error");
+	}
 
 	return std::string("Under construction");
 }

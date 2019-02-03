@@ -11,6 +11,7 @@
 namespace Bcode
 {
 	extern std::vector<char*> intercode;
+	extern void set_startPc(int n);
 }
 
 namespace Blex
@@ -19,6 +20,7 @@ namespace Blex
 	extern void BufferInit(std::string code);
 	extern Token nextTkn();
 	extern Token nextLine_tkn();
+	extern int get_lineNo();
 }
 
 namespace Bparse
@@ -51,13 +53,15 @@ namespace Bparse
 	void set_aryLen();
 	void fncDecl();
 	void backPatch(int line, int n);
+	*/
 	void setCode(int cd);
 	int setCode(int cd, int nbr);
+	/*
 	void setCode_rest();
 	void setCode_End();
 	void setCode_EofLine();
-	void push_intercode();
 	*/
+	void push_intercode();
 	bool is_localScope();
 	
 }
@@ -90,10 +94,28 @@ void Bparse::convert_to_internalCode(std::string code)
 			set_name();
 			Btable::enter(tmpTb, fncId);
 		}
-		OCALL_print(token.text.c_str());
 	}
 
-	//Must call BufferInit again
+	push_intercode();
+	Blex::BufferInit(code);
+
+	token = Blex::nextLine_tkn();
+
+	while(token.kind != EofProg)
+	{
+		//convert();
+	}
+
+	Bcode::set_startPc(1);
+
+	if(mainTblNbr != -1)
+	{
+		Bcode::set_startPc(Bcode::intercode.size());
+		setCode(Fcall, mainTblNbr);
+		setCode('(');
+		setCode(')');
+		push_intercode();
+	}
 }
 
 
@@ -108,6 +130,37 @@ void Bparse::set_name()
 	token = Blex::nextTkn();
 }
 
+void Bparse::setCode(int cd)
+{
+	*codebuf_p++ = (char)cd;
+}
+
+int Bparse::setCode(int cd, int nbr)
+{
+	*codebuf_p++ = (char)cd;
+	*SHORT_P(codebuf_p) = (short)nbr;
+	codebuf_p += SHORT_SIZ;
+
+	return Blex::get_lineNo();
+}
+
+void Bparse::push_intercode()
+{
+	int len;
+	char *p;
+
+	*codebuf_p++ = '\0';
+
+	if((len = codebuf_p - codebuf) >= LIN_SIZ)
+	{
+		throw std::string("Converted internal code is too long. Please shorten the expression.");
+	}
+	
+	p = new char[len];
+	memcpy(p, codebuf, len);
+	Bcode::intercode.push_back(p);
+
+}
 
 bool Bparse::is_localScope()
 {
