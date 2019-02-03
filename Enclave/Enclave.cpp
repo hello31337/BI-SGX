@@ -269,7 +269,7 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_ciphe
 	
 	if(intp_error_flag == true)
 	{
-		intp_result = intp_error_msg;
+		intp_result = "Error at interpreter\n" + intp_error_msg;
 	}
 
 	OCALL_print("\ninterpreter execution result:");

@@ -68,6 +68,12 @@ namespace Blex
 		{"@dummy",	END_KeyList},
 	};
 }
+
+namespace Bcode
+{
+	extern int Pc;
+}
+
 using namespace Blex;
 
 std::string BISGX_lex_main(std::string code)
@@ -382,10 +388,10 @@ std::string Blex::kind_to_s(const CodeSet &cd)
 
 	return kind_to_s(cd.kind);
 }
+*/
 
 int Blex::get_lineNo()
 {
-	extern int Pc;
-	return (Pc == -1) ? srcLineno : Pc;
+	return (Bcode::Pc == -1) ? srcLineno : Bcode::Pc;
 }
-*/
+

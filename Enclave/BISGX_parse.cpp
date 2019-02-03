@@ -33,7 +33,6 @@ namespace Bparse
 	bool fncDecl_F;
 	bool explicit_F;
 	char codebuf[LIN_SIZ+1], *codebuf_p;
-	std::string parser_error_msg = "";
 
 	/*protos*/
 	void init();
@@ -46,7 +45,9 @@ namespace Bparse
 	void optionSet();
 	void varDecl();
 	void var_nameChk(const Token &tk);
+	*/
 	void set_name();
+	/*
 	void set_aryLen();
 	void fncDecl();
 	void backPatch(int line, int n);
@@ -56,8 +57,14 @@ namespace Bparse
 	void setCode_End();
 	void setCode_EofLine();
 	void push_intercode();
-	void is_localScope();
 	*/
+	bool is_localScope();
+	
+}
+
+namespace Btable
+{
+	extern int enter(SymTbl &tb, SymKind kind);
 }
 
 void Bparse::init()
@@ -80,8 +87,8 @@ void Bparse::convert_to_internalCode(std::string code)
 		if(token.kind == Func)
 		{
 			token = Blex::nextTkn();
-			//set_name();
-			//enter(tmpTb, fncId);
+			set_name();
+			Btable::enter(tmpTb, fncId);
 		}
 		OCALL_print(token.text.c_str());
 	}
@@ -89,16 +96,20 @@ void Bparse::convert_to_internalCode(std::string code)
 	//Must call BufferInit again
 }
 
-/*
+
 void Bparse::set_name()
 {
 	if(token.kind != Ident)
 	{
-		parser_error_msg = "Identifier is needed.";
-		return;
+		throw std::string("Identifier is needed.");
 	}
 	tmpTb.clear();
 	tmpTb.name = token.text;
 	token = Blex::nextTkn();
 }
-*/
+
+
+bool Bparse::is_localScope()
+{
+	return fncDecl_F;
+}
