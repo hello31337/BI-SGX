@@ -1,7 +1,11 @@
 #include <vector>
 #include <stack>
 #include <string>
+#include <exception>
 
+#define SHORT_SIZ sizeof(short int)
+#define SHORT_P(p) (short int *)(p)
+#define UCHAR_P(p) (uint8_t *)(p)
 #define LIN_SIZ 255
 
 class BISGX_stack
@@ -17,8 +21,8 @@ public:
 	{
 		if(st.empty())
 		{
-			const char* message = "stack underflow.";
-			//OCALL_print(message);
+			std::string message = "stack underflow.";
+			throw message;
 		}
 
 		double d = st.top();
