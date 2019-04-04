@@ -107,6 +107,7 @@ bool Btable::is_localName(const std::string &name, SymKind kind)
 			return false;
 		}
 	}
+	return false;
 }
 
 int Btable::searchName(const std::string &s, int mode)
@@ -178,8 +179,6 @@ std::vector<SymTbl>::iterator Btable::tableP(const CodeSet &cd)
 	{
 		return Ltable.begin() + cd.symNbr;
 	}
-	else
-	{
-		return Gtable.begin() + cd.symNbr;
-	}
+	
+	return Gtable.begin() + cd.symNbr;
 }

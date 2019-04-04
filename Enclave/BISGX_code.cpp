@@ -7,6 +7,7 @@ namespace Bcode
 	CodeSet code;
 	int startPc;
 	int Pc = -1;
+	int error_Pc;
 	int baseReg;
 	int spReg;
 	int maxLine;
@@ -23,11 +24,9 @@ namespace Bcode
 	/*protos*/
 	void syntaxChk();
 	void set_startPc(int n);
-	/*
 	void execute();
 	void statement();
 	void block();
-	*/
 	double get_expression(int kind1 = 0, int kind2 = 0);
 	void expression(int kind1, int kind2);
 	void expression();
@@ -35,34 +34,22 @@ namespace Bcode
 	void factor();
 	int opOrder(TknKind kd);
 	void binaryExpr(TknKind op);
-	/*
 	void post_if_set(bool &flg);
-	*/
 	void fncCall_syntax(int fncNbr);
-	/*
 	void fncCall(int fncNbr);
 	void fncExec(int fncNbr);
-	*/
 	void sysFncExec_syntax(TknKind kd);
-	/*
 	void sysFncExec(TknKind kd);
-	*/
 	int get_memAdrs(const CodeSet &cd);
 	int get_topAdrs(const CodeSet &cd);
-	/*
 	int endline_of_If(int line);
-	*/
 	void chk_EofLine();
-	/*
 	TknKind lookCode(int line);
-	*/
 	CodeSet chk_nextCode(const CodeSet &cd, int kind2);
 	CodeSet firstCode(int line);
 	CodeSet nextCode();
-	/*
 	void chk_dtTyp(const CodeSet &cd);
 	void set_dtTyp(const CodeSet &cd, char typ);
-	*/
 	int set_LITERAL(double d);
 	int set_LITERAL(const std::string &s);
 }
@@ -76,6 +63,11 @@ namespace Blex
 {
 	extern std::string kind_to_s(const CodeSet &cd);
 	extern std::string kind_to_s(int kd);
+}
+
+namespace Bmain
+{
+	extern std::string result_str;
 }
 
 void Bcode::syntaxChk()
@@ -182,6 +174,283 @@ void Bcode::set_startPc(int n)
 	startPc = n;
 }
 
+void Bcode::execute()
+{
+	baseReg = 0;
+	spReg = Dmem.size();
+	Dmem.resize(spReg + 1000);
+	break_Flg = return_Flg = exit_Flg = false;
+	Pc = startPc;
+	maxLine = intercode.size() - 1;
+
+	while(Pc <= maxLine && !exit_Flg)
+	{
+		statement();
+	}
+
+	error_Pc = Pc;
+	Pc = -1;
+}
+
+void Bcode::statement()
+{
+	CodeSet save;
+	int top_line, end_line, varAdrs;
+	double wkVal, endDt, stepDt;
+
+	if(Pc > maxLine || exit_Flg)
+	{
+		return;
+	}
+	
+	code = save = firstCode(Pc);
+
+	top_line = Pc;
+	end_line = code.jmpAdrs;
+
+	if(code.kind == If)
+	{
+		end_line = endline_of_If(Pc);
+	}
+
+	switch(code.kind)
+	{
+		case If:
+			OCALL_print("If");
+			/*
+			get_expression() returns the result of If sentence's condition
+			expression.
+			If it is false, it has to shift to Elif or Else sentence and
+			estimate/execute them.
+			*/
+			if(get_expression(If, 0))
+			{
+				++Pc;
+				block();
+				Pc = end_line + 1;
+
+				return;
+			}
+
+			Pc = save.jmpAdrs;
+
+			while(lookCode(Pc) == Elif)
+			{
+				save = firstCode(Pc);
+				code = nextCode();
+
+				if(get_expression())
+				{
+					++Pc;
+					block();
+					Pc = end_line + 1;
+
+					return;
+				}
+
+				Pc = save.jmpAdrs;
+			}
+			
+			if(lookCode(Pc) == Else)
+			{
+				++Pc;
+				block();
+				Pc = end_line + 1;
+
+				return;
+			}
+
+			++Pc;
+
+			break;
+
+		case While:
+			OCALL_print("While");
+			while(1)
+			{
+				if(!get_expression(While, 0))
+				{
+					break;
+				}
+
+				++Pc;
+				block();
+
+				if(break_Flg || return_Flg || exit_Flg)
+				{
+					break_Flg = false;
+					break;
+				}
+
+				Pc = top_line;
+				code = firstCode(Pc);
+			}
+
+			Pc = end_line + 1;
+			break;
+
+		case For:
+			OCALL_print("For");
+			save = nextCode();
+			varAdrs = get_memAdrs(save);
+
+			expression('=', 0);
+			set_dtTyp(save, DBL_T);
+			Dmem.set(varAdrs, stk.pop());
+
+			endDt = get_expression(To, 0);
+
+			if(code.kind == Step)
+			{
+				stepDt = get_expression(Step, 0);
+			}
+			else
+			{
+				stepDt = 1.0;
+			}
+
+			for(;; Pc = top_line)
+			{
+				if(stepDt >= 0)
+				{
+					if(Dmem.get(varAdrs) > endDt)
+					{
+						break;
+					}
+				}
+				else
+				{
+					if(Dmem.get(varAdrs) < endDt)
+					{
+						break;
+					}
+				}
+
+				++Pc;
+				block();
+
+				if(break_Flg || return_Flg || exit_Flg)
+				{
+					break_Flg = false;
+					break;
+				}
+
+				Dmem.add(varAdrs, stepDt);
+			}
+
+			Pc = end_line + 1;
+			break;
+
+		case Fcall:
+			OCALL_print("Fcall");
+			fncCall(code.symNbr);
+			(void)stk.pop();
+			++Pc;
+
+			break;
+
+		case Func:
+			OCALL_print("Func");
+			Pc = end_line + 1;
+			
+			break;
+
+		case Print: case Println:
+			OCALL_print("Print");
+			sysFncExec(code.kind);
+			++Pc;
+
+			break;
+
+		case Gvar: case Lvar:
+			OCALL_print("Gvar/Lvar");
+			varAdrs = get_memAdrs(code);
+			expression('=', 0);
+			
+			set_dtTyp(save, DBL_T);
+			Dmem.set(varAdrs, stk.pop());
+
+			++Pc;
+
+			break;
+
+		case Return:
+			OCALL_print("Return");
+			wkVal = returnValue;
+			code = nextCode();
+
+			if(code.kind != '?' && code.kind != EofLine)
+			{
+				wkVal = get_expression();
+			}
+
+			post_if_set(return_Flg);
+
+			if(return_Flg)
+			{
+				returnValue = wkVal;
+			}
+
+			if(!return_Flg)
+			{
+				++Pc;
+			}
+
+			break;
+
+		case Break:
+			OCALL_print("Break");
+			code = nextCode();
+			post_if_set(break_Flg);
+
+			if(!break_Flg)
+			{
+				Pc++;
+			}
+
+			break;
+
+		case Exit:
+			OCALL_print("Exit");
+			code = nextCode();
+			exit_Flg = true;
+
+			break;
+
+		case Option: case Var: case EofLine:
+			if(code.kind == Option)
+				OCALL_print("Option");
+			else if(code.kind == Var)
+				OCALL_print("Var");
+			else
+				OCALL_print("EofLine");
+
+			++Pc;
+
+			break;
+
+		default:
+			std::string error_msg = "Illegal description: ";
+			error_msg += Blex::kind_to_s(code.kind);
+	}
+}
+
+void Bcode::block()
+{
+	TknKind k;
+
+	while(!break_Flg && !return_Flg && !exit_Flg)
+	{
+		k = lookCode(Pc);
+		if(k == Elif || k == Else || k == End)
+		{
+			break;
+		}
+
+		statement();
+	}
+}
+
 double Bcode::get_expression(int kind1, int kind2)
 {
 	expression(kind1, kind2);
@@ -226,21 +495,21 @@ void Bcode::term(int n)
 		op = code.kind;
 		code = nextCode();
 		term(n + 1);
-	}
 
-	if(syntaxChk_mode)
-	{
-		stk.pop();
-		stk.pop();
-		stk.push(1.0);
-	}
-	else
-	{
-		binaryExpr(op);
+		if(syntaxChk_mode)
+		{
+			stk.pop();
+			stk.pop();
+			stk.push(1.0);
+		}
+		else
+		{
+			binaryExpr(op);
+		}
 	}
 }
 
-void Bcode::factor() //NEED TO IMPLEMENT LATER
+void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES BROKEN
 {
 	TknKind kd = code.kind;
 
@@ -279,7 +548,7 @@ void Bcode::factor() //NEED TO IMPLEMENT LATER
 				break;
 
 			case Fcall:
-				fncCall_syntax(kd);
+				fncCall_syntax(code.symNbr);
 
 				break;
 
@@ -292,6 +561,51 @@ void Bcode::factor() //NEED TO IMPLEMENT LATER
 		}
 
 		return;
+	}
+
+	switch(kd)
+	{
+		case Not: case Minus: case Plus:
+			code = nextCode();
+			factor();
+
+			if(kd == Not)
+			{
+				stk.push(!stk.pop());
+			}
+			if(kd == Minus)
+			{
+				stk.push(-stk.pop());
+			}
+
+			break;
+		
+		case Lparen:
+			expression('(', ')');
+
+			break;
+
+		case IntNum: case DblNum:
+			stk.push(code.dblVal);
+			code = nextCode();
+
+			break;
+
+		case Gvar: case Lvar:
+			chk_dtTyp(code);
+			stk.push(Dmem.get(get_memAdrs(code)));
+
+			break;
+
+		case Toint: case Input:
+			sysFncExec(kd);
+
+			break;
+
+		case Fcall:
+			fncCall(code.symNbr);
+
+			break;
 	}
 }
 
@@ -393,6 +707,20 @@ void Bcode::binaryExpr(TknKind op)
 	stk.push(d);
 }
 
+void Bcode::post_if_set(bool &flg)
+{
+	if(code.kind == EofLine)
+	{
+		flg = true;
+		return;
+	}
+
+	if(get_expression('?', 0))
+	{
+		flg = true;
+	}
+}
+
 void Bcode::fncCall_syntax(int fncNbr)
 {
 	int argCt = 0;
@@ -416,6 +744,8 @@ void Bcode::fncCall_syntax(int fncNbr)
 
 	code = chk_nextCode(code, ')');
 
+	OCALL_print_int(fncNbr);
+
 	if(argCt != Btable::Gtable[fncNbr].args)
 	{
 		std::string error_msg = Btable::Gtable[fncNbr].name;
@@ -425,6 +755,89 @@ void Bcode::fncCall_syntax(int fncNbr)
 	}
 
 	stk.push(1.0);
+}
+
+void Bcode::fncCall(int fncNbr)
+{
+	int n, argCt = 0;
+	std::vector<double> vc;
+
+	nextCode();
+	code = nextCode();
+
+	if(code.kind != ')')
+	{
+		for(;; code = nextCode())
+		{
+			expression();
+			++argCt;
+
+			if(code.kind != ',')
+			{
+				break;
+			}
+		}
+	}
+
+	code = nextCode();
+
+	for(n = 0; n < argCt; n++)
+	{
+		vc.push_back(stk.pop());
+	}
+
+	for(n = 0; n < argCt; n++)
+	{
+		stk.push(vc[n]);
+	}
+
+	fncExec(fncNbr);
+}
+
+void Bcode::fncExec(int fncNbr)
+{
+	int save_Pc = Pc;
+	int save_baseReg = baseReg;
+	int save_spReg = spReg;
+	char *save_code_ptr = code_ptr;
+	CodeSet save_code = code;
+
+	Pc = Btable::Gtable[fncNbr].adrs;
+	baseReg = spReg;
+	spReg += Btable::Gtable[fncNbr].frame;
+	Dmem.auto_resize(spReg);
+	returnValue = 1.0;
+	code = firstCode(Pc);
+
+	nextCode();
+	code = nextCode();
+
+	if(code.kind != ')')
+	{
+		for(;; code = nextCode())
+		{
+			set_dtTyp(code, DBL_T);
+			Dmem.set(get_memAdrs(code), stk.pop());
+
+			if(code.kind != ',')
+			{
+				break;
+			}
+		}
+	}
+
+	code = nextCode();
+
+	++Pc;
+	block();
+	return_Flg = false;
+
+	stk.push(returnValue);
+	Pc = save_Pc;
+	baseReg = save_baseReg;
+	spReg = save_spReg;
+	code_ptr = save_code_ptr;
+	code = save_code;
 }
 
 void Bcode::sysFncExec_syntax(TknKind kd)
@@ -463,6 +876,55 @@ void Bcode::sysFncExec_syntax(TknKind kd)
 			while(code.kind == ',');
 
 			chk_EofLine();
+
+			break;
+	}
+}
+
+void Bcode::sysFncExec(TknKind kd)
+{
+	double d;
+	std::string s;
+
+	switch(kd)
+	{
+		case Toint:
+			code = nextCode();
+			stk.push((int)get_expression('(', ')'));
+
+			break;
+
+		case Input:
+			throw std::string("Using Toint is forbidden.\nThis function will be deleted in near futue.");
+
+
+		case Print: case Println:
+			do
+			{
+				code = nextCode();
+
+				if(code.kind == String)
+				{
+					Bmain::result_str += code.text;
+					code = nextCode();
+				}
+				else
+				{
+					d = get_expression();
+
+					if(!exit_Flg)
+					{
+						Bmain::result_str += std::to_string(d);
+					}
+				}
+					
+			}
+			while(code.kind == ',');
+
+			if(kd == Println)
+			{
+				Bmain::result_str += "\n";
+			}
 
 			break;
 	}
@@ -530,12 +992,44 @@ int Bcode::get_topAdrs(const CodeSet &cd)
 	return 0;
 }
 
+int Bcode::endline_of_If(int line)
+{
+	CodeSet cd;
+	char *save = code_ptr;
+
+	cd = firstCode(line);
+
+	while(1)
+	{
+		line = cd.jmpAdrs;
+		cd = firstCode(line);
+
+		if(cd.kind == Elif || cd.kind == Else)
+		{
+			continue;
+		}
+		if(cd.kind == End)
+		{
+			break;
+		}
+	}
+
+	code_ptr = save;
+
+	return line;
+}
+
 void Bcode::chk_EofLine()
 {
 	if(code.kind != EofLine)
 	{
 		throw std::string("Illegal Description.");
 	}
+}
+
+TknKind Bcode::lookCode(int line)
+{
+	return (TknKind)(uint8_t)intercode[line][0];
 }
 
 CodeSet Bcode::chk_nextCode(const CodeSet &cd, int kind2)
@@ -612,6 +1106,38 @@ CodeSet Bcode::nextCode()
 
 		default:
 			return CodeSet(kd);
+	}
+}
+
+void Bcode::chk_dtTyp(const CodeSet &cd)
+{
+	if(Btable::tableP(cd)->dtTyp == NON_T)
+	{
+		std::string error_msg = "Uninitialized variable reference: ";
+		error_msg += Blex::kind_to_s(cd);
+
+		throw error_msg;
+	}
+}
+
+void Bcode::set_dtTyp(const CodeSet &cd, char typ)
+{
+	int memAdrs = get_topAdrs(cd);
+	std::vector<SymTbl>::iterator p = Btable::tableP(cd);
+
+	if(p->dtTyp != NON_T)
+	{
+		return;
+	}
+
+	p->dtTyp = typ;
+
+	if(p->aryLen != 0)
+	{
+		for(int n = 0;  n < (int)nbrLITERAL.size(); n++)
+		{
+			Dmem.set(memAdrs + n, 0);
+		}
 	}
 }
 

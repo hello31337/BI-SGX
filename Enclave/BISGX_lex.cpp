@@ -74,6 +74,16 @@ namespace Bcode
 	extern int Pc;
 }
 
+namespace Btable
+{
+	extern std::vector<SymTbl>::iterator tableP(const CodeSet &cd);
+}
+
+namespace Bmisc
+{
+	extern std::string dbl_to_s(double d);
+}
+
 using namespace Blex;
 
 std::string BISGX_lex_main(std::string code)
@@ -137,6 +147,7 @@ void Blex::BufferInit(std::string code)
 {
 	inputstr = code;
 	istr_len = inputstr.length();
+	strindex = 0;
 
 	endOfFile_F = false;
 	srcLineno = 0;
@@ -365,7 +376,6 @@ std::string Blex::kind_to_s(int kd)
 	return "";
 }
 
-/*
 std::string Blex::kind_to_s(const CodeSet &cd)
 {
 	switch(cd.kind)
@@ -373,11 +383,11 @@ std::string Blex::kind_to_s(const CodeSet &cd)
 		case Lvar:
 		case Gvar:
 		case Fcall:
-			return tableP(cd)->name;
+			return Btable::tableP(cd)->name;
 
 		case IntNum:
 		case DblNum:
-			return dbl_to_s(cd.dblVal);
+			return Bmisc::dbl_to_s(cd.dblVal);
 
 		case String:
 			return std::string("\"") + cd.text + "\"";
@@ -388,7 +398,6 @@ std::string Blex::kind_to_s(const CodeSet &cd)
 
 	return kind_to_s(cd.kind);
 }
-*/
 
 int Blex::get_lineNo()
 {
