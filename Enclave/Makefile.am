@@ -76,6 +76,8 @@ CLEANFILES+= $(ENCLAVE)_t.c $(ENCLAVE)_t.h
 ## target name (i.e., $(ENCLAVE)_SOURCES will not work).
 
 Enclave_SOURCES = Enclave_t.c Enclave_t.h Enclave.cpp BISGX_lex.cpp \
+	BISGX_parse.cpp BISGX_code.cpp BISGX_main.cpp BISGX_table.cpp \
+	BISGX_misc.cpp \
 	$(ENCLAVE_KEY) $(ENCLAVE_CONFIG)
 
 

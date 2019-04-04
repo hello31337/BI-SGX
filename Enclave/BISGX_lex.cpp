@@ -1,45 +1,38 @@
 #include "Enclave_t.h"
 #include "BISGX.h"
 
-#include <string>
 #include <cstdlib>
 #include <cctype>
 #include <cstring>
 #include <cassert>
 
+#define MAX_LINE 2000
+
 namespace Blex
 {
-	enum TknKind
-	{
-		Lparen = 1,	Rparen,	Plus,	Minus,	Multi,	Divi,
-		Assign,		Comma,	DblQ,
-		Equal,		NotEq,	Less,	LessEq,	Great,	GreatEq,
-		If,			Else,	End,	Print,	Ident,	IntNum,
-		String,		Letter, Digit,	EofTkn,	Others,	END_list,
-		Error
-	};
-
-	struct Token
-	{
-		TknKind kind;
-		std::string text;
-		int intVal;
-		Token () { kind = Others; text = ""; intVal = 0; }
-		Token (TknKind k, const std::string& s, int d = 0)
-		{
-			kind = k; text = s; intVal = d;
-		}
-	};
-
 	
+	/*protos*/
 	void initChTyp();
 	Token nextTkn();
 	int nextCh();
 	bool is_ope2(int c1, int c2);
 	TknKind get_kind(const std::string &s);
+	void nextLine();
+	Token nextLine_tkn();
+	Token chk_nextTkn(const Token &tk, int kind2);
+	void set_token_p(char *p);
+	std::string kind_to_s(int kd);
+	std::string kind_to_s(const CodeSet &cd);
+	int get_lineNo();
+	void BufferInit(std::string code);
 
+	/*Global vals*/
+	int srcLineno;
 	TknKind ctyp[256];
-	Token token;
+	char *token_p;
+	bool endOfFile_F;
+	char buf[LIN_SIZ + 5];
+
 	std::string inputstr;
 	int strindex = 0;
 	int istr_len = 0;
@@ -51,23 +44,56 @@ namespace Blex
 	};
 
 	KeyWord KeyWdTbl[] = {
-		{"if",	If		}, {"else",	 Else	},
-		{"end",	End		}, {"print", Print	},
-		{"(", 	Lparen	}, {")", 	 Rparen	},
-		{"+",	Plus	}, {"-",	 Minus	},
-		{"*", 	Multi	}, {"/", 	 Divi	},
-		{"=", 	Assign	}, {",", 	 Comma	},
-		{"==", 	Equal	}, {"!=", 	 NotEq 	},
-		{"<",	Less	}, {"<=", 	 LessEq	},
-		{">", 	Great	}, {">=",	 GreatEq},
-		{"", 	END_list},
+		{"func"		, Func	}, {"var"		, Var	 },
+		{"if"		, If	}, {"elif"		, Elif	 },
+		{"else"		, Else	}, {"for"		, For	 },
+		{"to"		, To	}, {"step"		, Step	 },
+		{"while"	, While }, {"end"		, End	 },
+		{"break"	, Break	}, {"return"	, Return },
+		{"print"	, Print }, {"println"	, Println},
+		{"option"	, Option}, {"input"		, Input	 },
+		{"toint"	, Toint	}, {"exit"		, Exit	 },
+		{"("	, Lparen	}, {")"		, Rparen	},
+		{"["	, Lbracket	}, {"]"		, Rbracket	},
+		{"+"	, Plus		}, {"-"		, Minus		},
+		{"*"	, Multi		}, {"/"		, Divi		},
+		{"=="	, Equal		}, {"!="	, NotEq		},
+		{"<"	, Less		}, {"<="	, LessEq	},
+		{">"	, Great		}, {">="	, GreatEq	},
+		{"&&"	, And		}, {"||"	, Or		},
+		{"!"	, Not		}, {"%"		, Mod		},
+		{"?"	, Ifsub		}, {"="		, Assign	},
+		{"\\"	, IntDivi	}, {","		, Comma		},
+		{"\""	, DblQ		},
+		{"@dummy",	END_KeyList},
 	};
 }
+
+namespace Bcode
+{
+	extern int Pc;
+}
+
+namespace Btable
+{
+	extern std::vector<SymTbl>::iterator tableP(const CodeSet &cd);
+}
+
+namespace Bmisc
+{
+	extern std::string dbl_to_s(double d);
+}
+
 using namespace Blex;
 
 std::string BISGX_lex_main(std::string code)
 {
 	inputstr = code;
+
+	/*temporary returns fixed string for debug*/
+	return std::string("Under Construction");
+
+	/*
 	std::string resultstr("text		kind  intVal\n");
 	initChTyp();
 
@@ -91,6 +117,7 @@ std::string BISGX_lex_main(std::string code)
 	}
 
 	return resultstr;
+	*/
 }
 
 void Blex::initChTyp()
@@ -102,73 +129,176 @@ void Blex::initChTyp()
 	for(i = 'A'; i < 'Z'; i++) ctyp[i] = Letter;
 	for(i = 'a'; i < 'z'; i++) ctyp[i] = Letter;
 
-	ctyp['('] = Lparen;	ctyp[')'] = Rparen;
-	ctyp['<'] = Less;	ctyp['>'] = Great;
-	ctyp['+'] = Plus;	ctyp['-'] = Minus;
-	ctyp['*'] = Multi;	ctyp['/'] = Divi;
-	ctyp['_'] = Letter;	ctyp['='] = Assign;
-	ctyp[','] = Comma;	ctyp['"'] = DblQ;
+	ctyp['_'] = Letter; 	ctyp['$'] = Doll;
+	ctyp['('] = Lparen;		ctyp[')'] = Rparen;
+	ctyp['['] = Lbracket;	ctyp[']'] = Rbracket;
+	ctyp['<'] = Less;		ctyp['>'] = Great;
+	ctyp['+'] = Plus;		ctyp['-'] = Minus;
+	ctyp['*'] = Multi;		ctyp['/'] = Divi;
+	ctyp['!'] = Not;		ctyp['%'] = Mod;
+	ctyp['?'] = Ifsub;		ctyp['='] = Assign;
+	ctyp['\\'] = IntDivi;	ctyp[','] = Comma;
+	ctyp['\"'] = DblQ;
 
 	return;
 }
 
+void Blex::BufferInit(std::string code)
+{
+	inputstr = code;
+	istr_len = inputstr.length();
+	strindex = 0;
+
+	endOfFile_F = false;
+	srcLineno = 0;
+
+	OCALL_print("BufferInit complete.");
+}
+
+void Blex::nextLine()
+{
+	std::string s;
+
+	if(endOfFile_F) return;
+	if(strindex >= istr_len)
+	{
+		endOfFile_F = true;
+		return;
+	}
+
+	for(int i = 0; i < LIN_SIZ + 5; i++)
+	{
+		buf[i] = '\0';
+	}
+
+	for(int i = 0; i < LIN_SIZ + 5; i++)
+	{
+		if(inputstr[strindex] == '\n')
+		{
+			buf[i] = '\0';
+			strindex++;
+			break;
+		}
+		else
+		{
+			buf[i] = inputstr[strindex];
+			strindex++;
+		}
+	}
+
+	if(std::strlen(buf) > LIN_SIZ)
+	{
+		throw std::string("Only 255 or less chars are allowed par single code line.");
+	}
+	if(++srcLineno > MAX_LINE)
+	{
+		throw std::string("Input Program exceeded max line limit.");
+		return;
+	}
+
+	token_p = buf;
+}
+
+Token Blex::nextLine_tkn()
+{
+	nextLine();
+	return nextTkn();
+}
+
+#define CH (*token_p)
+#define C2 (*(token_p+1))
+#define NEXT_CH() ++token_p;
+
 Token Blex::nextTkn()
 {
 	TknKind kd;
-	int ch0, num = 0;
-	static int ch = ' ';
 	std::string txt = "";
 
-	while(std::isspace(ch))
+	if(endOfFile_F)
 	{
-		ch = nextCh();
-	}
-	if(strindex >= istr_len)
-	{
-		return Token(EofTkn, txt);
+		return Token(EofProg);
 	}
 
-	switch(ctyp[ch])
+	while(std::isspace(CH))
 	{
-		case Letter:
-			for( ; ctyp[ch] == Letter || ctyp[ch] == Digit; ch = nextCh())
+		NEXT_CH();
+	}
+
+	if(CH == '\0')
+	{
+		return Token(EofLine);
+	}
+
+	switch(ctyp[CH])
+	{
+		case Doll: case Letter:
+			txt += CH;
+			NEXT_CH();
+			while(ctyp[CH] == Letter || ctyp[CH] == Digit)
 			{
-				txt += ch;
+				txt += CH;
+				NEXT_CH();
 			}
 			break;
 
 		case Digit:
-			for(num = 0; ctyp[ch] == Digit; ch = nextCh())
+			kd = IntNum;
+			
+			while(ctyp[CH] == Digit)
 			{
-				num = num * 10 + (ch - '0');
+				txt += CH;
+				NEXT_CH();
 			}
-			return Token(IntNum, txt, num);
+			if(CH == '.')
+			{
+				kd == DblNum;
+				txt += CH;
+				NEXT_CH();
+			}
+			while(ctyp[CH] == Digit)
+			{
+				txt += CH;
+				NEXT_CH();
+			}
+
+			return Token(kd, txt, std::atof(txt.c_str()));
 
 		case DblQ:
-			for(ch = nextCh(); strindex != istr_len && ch != '\n' && ch != '"'; ch = nextCh())
+			NEXT_CH();
+			
+			while(CH != '\0' && CH != '"')
 			{
-				txt += ch;
+				txt += CH;
+				NEXT_CH();
 			}
 
-			if(ch != '"')
+			if(CH == '"') 
 			{
-				std::string error_msg("String literal is not properly closed by Double Quote.\n");
-				return Token(Error, error_msg);
+				NEXT_CH();
 			}
-
-			ch = nextCh();
+			else
+			{
+				//std::string error_msg("String literal is not properly closed by Double Quote.\n");
+				throw std::string("String literal is not properly closed by Double Quotation.");
+				//return Token(Error, error_msg);
+			}
 
 			return Token(String, txt);
 
 		default:
-			txt += ch;
-			ch0 = ch;
-			ch = nextCh();
-
-			if(is_ope2(ch0, ch))
+			if(CH == '/' && C2 == '/') return Token(EofLine);
+			
+			if(is_ope2(CH, C2))
 			{
-				txt += ch;
-				ch = nextCh();
+				txt += CH;
+				txt += C2;
+				NEXT_CH();
+				NEXT_CH();
+			}
+			else
+			{
+				txt += CH;
+				NEXT_CH();
 			}
 	}
 
@@ -176,20 +306,14 @@ Token Blex::nextTkn()
 
 	if(kd == Others)
 	{
+		/*
 		std::string error_msg("Illegal token is detected.\n");
 		return Token(Error, error_msg);
+		*/
+		throw std::string("Illegal token is detected.");
 	}
 
 	return Token(kd, txt);
-}
-
-int Blex::nextCh()
-{
-	static int c = 0;
-	c = inputstr[strindex];
-	strindex++;
-
-	return c;
 }
 
 bool Blex::is_ope2(int c1, int c2)
@@ -203,12 +327,12 @@ bool Blex::is_ope2(int c1, int c2)
 
 	s[1] = c1, s[2] = c2;
 
-	return std::strstr(" <= >= == != ", s) != NULL;
+	return std::strstr(" ++ -- <= >= == != && || ", s) != NULL;
 }
 
 TknKind Blex::get_kind(const std::string &s)
 {
-	for(int i = 0; KeyWdTbl[i].keyKind != END_list; i++)
+	for(int i = 0; KeyWdTbl[i].keyKind != END_KeyList; i++)
 	{
 		if(s == KeyWdTbl[i].keyName)
 		{
@@ -217,7 +341,66 @@ TknKind Blex::get_kind(const std::string &s)
 	}
 
 	if(ctyp[s[0]] == Letter) return Ident;
-	if(ctyp[s[0]] == Digit) return IntNum;
+	if(ctyp[s[0]] == Digit) return DblNum;
 
 	return Others;
 }
+
+Token Blex::chk_nextTkn(const Token &tk, int kind2)
+{
+	if(tk.kind != kind2)
+	{
+		/*
+		std::string error_msg = "Illegal token kind.";
+		return Token(Error, error_msg);
+		*/
+		throw std::string("Illegal token kind.");
+	}
+
+	return nextTkn();
+}
+
+void Blex::set_token_p(char *p)
+{
+	token_p = p;
+}
+
+std::string Blex::kind_to_s(int kd)
+{
+	for(int i = 0; ; i++)
+	{
+		if(KeyWdTbl[i].keyKind == END_KeyList) break;
+		if(KeyWdTbl[i].keyKind == kd) return KeyWdTbl[i].keyName;
+	}
+
+	return "";
+}
+
+std::string Blex::kind_to_s(const CodeSet &cd)
+{
+	switch(cd.kind)
+	{
+		case Lvar:
+		case Gvar:
+		case Fcall:
+			return Btable::tableP(cd)->name;
+
+		case IntNum:
+		case DblNum:
+			return Bmisc::dbl_to_s(cd.dblVal);
+
+		case String:
+			return std::string("\"") + cd.text + "\"";
+
+		case EofLine:
+			return "";
+	}
+
+	return kind_to_s(cd.kind);
+}
+
+int Blex::get_lineNo()
+{
+	return (Bcode::Pc == -1) ? srcLineno : Bcode::Pc;
+}
+

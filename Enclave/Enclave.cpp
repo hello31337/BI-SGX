@@ -20,7 +20,6 @@ in the License.
 #endif
 #include "Enclave_t.h"
 #include <string.h>
-#include <string>
 #include <cstdlib>
 #include <sgx_utils.h>
 #include <sgx_tae_service.h>
@@ -29,7 +28,19 @@ in the License.
 
 #include "BISGX.h"
 
-std::string BISGX_lex_main(std::string code);
+extern std::string BISGX_main(std::string code,
+			bool *error_flag, std::string *error_msg);
+
+namespace Blex
+{
+	extern void BufferInit(std::string code);
+	extern void nextLine();
+}
+
+namespace Bparse
+{
+	extern void convert_to_internalCode(std::string code);
+}
 
 static const sgx_ec256_public_t def_service_public_key = {
     {
@@ -250,9 +261,18 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_ciphe
 	std::string intp_str(reinterpret_cast<char*>(intp_code));
 
 	/*Call interpreter*/
-	std::string intp_result = BISGX_lex_main(intp_str);
+	bool intp_error_flag = false;
+	std::string intp_error_msg = "";
+	std::string intp_result;
+
+	intp_result = BISGX_main(intp_str, &intp_error_flag, &intp_error_msg);
 	
-	OCALL_print("\nlexical analysis result:");
+	if(intp_error_flag == true)
+	{
+		intp_result = "Error at interpreter\n" + intp_error_msg;
+	}
+
+	OCALL_print("\ninterpreter execution result:");
 	OCALL_print(intp_result.c_str());
 
 	/*processes for encrypt result*/
@@ -277,7 +297,6 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_ciphe
 		OCALL_print_status(status);
 		return status;
 	}
-
 	
 	for(int i = 0; i < 16; i++)
 	{
