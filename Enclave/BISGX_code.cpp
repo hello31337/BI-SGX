@@ -1,4 +1,5 @@
 #include "BISGX.h"
+#include "Enclave_t.h"
 
 namespace Bcode
 {
@@ -27,19 +28,23 @@ namespace Bcode
 	void statement();
 	void block();
 	*/
-	double get_expression(int kind1, int kind2);
+	double get_expression(int kind1 = 0, int kind2 = 0);
 	void expression(int kind1, int kind2);
 	void expression();
 	void term(int n);
-	/*
 	void factor();
 	int opOrder(TknKind kd);
 	void binaryExpr(TknKind op);
+	/*
 	void post_if_set(bool &flg);
+	*/
 	void fncCall_syntax(int fncNbr);
+	/*
 	void fncCall(int fncNbr);
 	void fncExec(int fncNbr);
+	*/
 	void sysFncExec_syntax(TknKind kd);
+	/*
 	void sysFncExec(TknKind kd);
 	*/
 	int get_memAdrs(const CodeSet &cd);
@@ -70,13 +75,14 @@ namespace Btable
 namespace Blex
 {
 	extern std::string kind_to_s(const CodeSet &cd);
+	extern std::string kind_to_s(int kd);
 }
 
 void Bcode::syntaxChk()
 {
 	syntaxChk_mode = true;
 
-	for(Pc = 1; Pc < (int)intercode.size(); pc++)
+	for(Pc = 1; Pc < (int)intercode.size(); Pc++)
 	{
 		code = firstCode(Pc);
 
@@ -89,11 +95,86 @@ void Bcode::syntaxChk()
 				code = nextCode();
 				chk_EofLine();
 
+				break;
+
+			case If: case Elif: case While:
+				code = nextCode();
+				(void)get_expression(0, EofLine);
+
+				break;
+
 			case For:
 				code = nextCode();
 				(void)get_memAdrs(code);
+				(void)get_expression('=', 0);
+				(void)get_expression(To, 0);
+
+				if(code.kind == Step)
+				{
+					(void)get_expression(Step, 0);
+				}
+
+				chk_EofLine();
+
+				break;
+
+			case Fcall:
+				fncCall_syntax(code.symNbr);
+				chk_EofLine();
+				(void)stk.pop();
+
+				break;
+
+			case Print: case Println:
+				sysFncExec_syntax(code.kind);
+
+				break;
+
+			case Gvar: case Lvar:
+				(void)get_memAdrs(code);
+				(void)get_expression('=', EofLine);
+
+				break;
+
+			case Return:
+				code = nextCode();
+				if(code.kind != '?' && code.kind != EofLine)
+				{
+					(void)get_expression();
+				}
+
+				if(code.kind == '?')
+				{
+					(void)get_expression('?', 0);
+				}
+
+				chk_EofLine();
+
+				break;
+
+			case Break:
+				code = nextCode();
+
+				if(code.kind == '?')
+				{
+					(void)get_expression('?', 0);
+				}
+
+				chk_EofLine();
+
+				break;
+
+			case EofLine:
+				break;
+
+			default:
+				std::string error_msg = "Illegal description: ";
+				error_msg += Blex::kind_to_s(code.kind);
+
+				throw error_msg;
 		}
 	}
+	syntaxChk_mode = false;
 }
 
 void Bcode::set_startPc(int n)
@@ -128,6 +209,265 @@ void Bcode::expression()
 	term(1);
 }
 
+void Bcode::term(int n)
+{
+	TknKind op;
+
+	if(n == 7)
+	{
+		factor();
+		return;
+	}
+
+	term(n + 1);
+
+	while(n == opOrder(code.kind))
+	{
+		op = code.kind;
+		code = nextCode();
+		term(n + 1);
+	}
+
+	if(syntaxChk_mode)
+	{
+		stk.pop();
+		stk.pop();
+		stk.push(1.0);
+	}
+	else
+	{
+		binaryExpr(op);
+	}
+}
+
+void Bcode::factor() //NEED TO IMPLEMENT LATER
+{
+	TknKind kd = code.kind;
+
+	if(syntaxChk_mode)
+	{
+		switch(kd)
+		{
+			case Not: case Minus: case Plus:
+				code = nextCode();
+				factor();
+				stk.pop();
+				stk.push(1.0);
+
+				break;
+
+			case Lparen:
+				expression('(', ')');
+
+				break;
+
+			case IntNum: case DblNum:
+				stk.push(1.0);
+				code = nextCode();
+
+				break;
+
+			case Gvar: case Lvar:
+				(void)get_memAdrs(code);
+				stk.push(1.0);
+
+				break;
+
+			case Toint: case Input:
+				sysFncExec_syntax(kd);
+
+				break;
+
+			case Fcall:
+				fncCall_syntax(kd);
+
+				break;
+
+			case EofLine:
+				throw std::string("Illegal expression.");
+
+			default:
+				std::string error_msg = "Expression error: ";
+				error_msg += Blex::kind_to_s(code);
+		}
+
+		return;
+	}
+}
+
+int Bcode::opOrder(TknKind kd)
+{
+	switch(kd)
+	{
+		case Multi: case Divi: case Mod: case IntDivi:
+			return 6;
+
+		case Plus: case Minus:
+			return 5;
+
+		case Less: case LessEq: case Great: case GreatEq:
+			return 4;
+
+		case Equal: case NotEq:
+			return 3;
+
+		case And:
+			return 2;
+
+		case Or:
+			return 1;
+
+		default:
+			return 0;
+	}
+}
+
+void Bcode::binaryExpr(TknKind op)
+{
+	double d = 0, d2 = stk.pop(), d1 = stk.pop();
+
+	if((op == Divi || op == Mod || op == IntDivi) && d2 == 0)
+	{
+		throw std::string("Zero division error.");
+	}
+
+	switch(op)
+	{
+		case Plus:
+			d = d1 + d2;
+			break;
+
+		case Minus:
+			d = d1 - d2;
+			break;
+
+		case Multi:
+			d = d1 * d2;
+			break;
+
+		case Divi:
+			d = d1 / d2;
+			break;
+
+		case Mod:
+			d = (int)d1 % (int)d2;
+			break;
+
+		case IntDivi:
+			d = (int)d1 / (int)d2;
+			break;
+
+		case Less:
+			d = d1 < d2;
+			break;
+
+		case LessEq:
+			d = d1 <= d2;
+			break;
+
+		case Great:
+			d = d1 > d2;
+			break;
+
+		case GreatEq:
+			d = d1 >= d2;
+			break;
+
+		case Equal:
+			d = d1 == d2;
+			break;
+
+		case NotEq:
+			d = d1 != d2;
+			break;
+
+		case And:
+			d = d1 && d2;
+			break;
+
+		case Or:
+			d = d1 || d2;
+			break;
+	}
+
+	stk.push(d);
+}
+
+void Bcode::fncCall_syntax(int fncNbr)
+{
+	int argCt = 0;
+
+	code = nextCode();
+	code = chk_nextCode(code, '(');
+
+	if(code.kind != ')')
+	{
+		for(;; code = nextCode())
+		{
+			(void)get_expression();
+			++argCt;
+
+			if(code.kind != ',')
+			{
+				break;
+			}
+		}
+	}
+
+	code = chk_nextCode(code, ')');
+
+	if(argCt != Btable::Gtable[fncNbr].args)
+	{
+		std::string error_msg = Btable::Gtable[fncNbr].name;
+		error_msg += " The number of function argument(s) is illegal.";
+		
+		throw error_msg;
+	}
+
+	stk.push(1.0);
+}
+
+void Bcode::sysFncExec_syntax(TknKind kd)
+{
+	switch(kd)
+	{
+		case Toint:
+			code = nextCode();
+			(void)get_expression('(', ')');
+			stk.push(1.0);
+
+			break;
+
+		case Input:
+			code = nextCode();
+			code = chk_nextCode(code, '(');
+			code = chk_nextCode(code, ')');
+			stk.push(1.0);
+
+			break;
+
+		case Print: case Println:
+			do
+			{
+				code = nextCode();
+				
+				if(code.kind == String)
+				{
+					code = nextCode();
+				}
+				else
+				{
+					(void)get_expression();
+				}
+			}
+			while(code.kind == ',');
+
+			chk_EofLine();
+
+			break;
+	}
+}
+
 int Bcode::get_memAdrs(const CodeSet &cd)
 {
 	int adr = 0, index, len;
@@ -155,17 +495,15 @@ int Bcode::get_memAdrs(const CodeSet &cd)
 	}
 
 	index = (int)d;
-	line = cd.jmpAdrs;
-	cd = firstCode(line);
 
-	if(cd.kind == Elif || cd.kind == Else)
+	if(index < 0 || len <= index)
 	{
-		continue;
-	}
+		std::string error_msg = std::to_string(index);
+		error_msg += " is out of index range (index range: 0-";
+		error_msg += std::to_string(len-1);
+		error_msg += ")";
 
-	if(cd.kind == End)
-	{
-		break;
+		throw error_msg;
 	}
 
 	return adr + index;
@@ -200,7 +538,7 @@ void Bcode::chk_EofLine()
 	}
 }
 
-CodeSet chk_nextCode(const CodeSet &cd, int kind2)
+CodeSet Bcode::chk_nextCode(const CodeSet &cd, int kind2)
 {
 	if(cd.kind != kind2)
 	{
@@ -236,7 +574,7 @@ CodeSet Bcode::firstCode(int line)
 CodeSet Bcode::nextCode()
 {
 	TknKind kd;
-	short int jmpAdrs. tblNbr;
+	short int jmpAdrs, tblNbr;
 
 	if(*code_ptr == '\0')
 	{
