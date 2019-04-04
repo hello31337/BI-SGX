@@ -52,8 +52,10 @@ enclave {
 
 		public sgx_status_t run_interpreter(sgx_ra_context_t context,
 			[user_check]unsigned char *code_cipher, size_t cipherlen,
-			[user_check]unsigned char *p_iv,
-			[user_check]unsigned char *tag, [out]int* result);
+			[in, out, size=12]unsigned char *p_iv,
+			[in, out, size=16]unsigned char *tag,
+			[in, out, size=10000]unsigned char *result_cipher,
+			[out]size_t *res_len);
 	};
 
 	untrusted {
