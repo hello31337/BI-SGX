@@ -228,7 +228,7 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_ciphe
 	}
 	
 	uint32_t p_iv_len = 12;
-	uint8_t intp_code[10000] = {'\0'};
+	uint8_t intp_code[1000000] = {'\0'};
 
 	
 	sgx_aes_gcm_128bit_tag_t tag_t;
@@ -263,7 +263,7 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_ciphe
 	/*Call interpreter*/
 	bool intp_error_flag = false;
 	std::string intp_error_msg = "";
-	std::string intp_result;
+	std::string intp_result = "";
 
 	intp_result = BISGX_main(intp_str, &intp_error_flag, &intp_error_msg);
 	
@@ -271,6 +271,21 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_ciphe
 	{
 		intp_result = "Error at interpreter\n" + intp_error_msg;
 	}
+
+	if(intp_result == "")
+	{
+		intp_result = "Info: Your program has successfully exited from interpreter, but there is no result output.";
+	}
+
+	uint8_t timebuf[64] = {'\0'};
+
+	OCALL_get_time(timebuf, 64);
+
+	std::string timeTag = "--------------------------------------------\nDate: ";
+	timeTag += std::string(reinterpret_cast<char*>(timebuf));
+	timeTag += ("\n--------------------------------------------\n");
+
+	intp_result.insert(0, timeTag);
 
 	OCALL_print("\ninterpreter execution result:");
 	OCALL_print(intp_result.c_str());

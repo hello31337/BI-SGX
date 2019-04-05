@@ -188,7 +188,6 @@ void Bcode::execute()
 		statement();
 	}
 
-	error_Pc = Pc;
 	Pc = -1;
 }
 

@@ -14,6 +14,7 @@ namespace Bcode
 	extern void set_startPc(int n);
 	extern int set_LITERAL(double d);
 	extern int set_LITERAL(const std::string &s);
+	extern int error_Pc;
 }
 
 namespace Blex

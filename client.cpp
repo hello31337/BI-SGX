@@ -163,7 +163,7 @@ void OCALL_dump(uint8_t *char_to_dump, int bufsize)
 	return;
 }
 
-void OCALL_generate_nonce(uint8_t* ivbuf, int bufsize)
+void OCALL_generate_nonce(uint8_t *ivbuf, int bufsize)
 {
 	random_device rnd;
 	mt19937 mt(rnd());
@@ -179,6 +179,12 @@ void OCALL_generate_nonce(uint8_t* ivbuf, int bufsize)
 	cout << endl;
 
 	return;
+}
+
+void OCALL_get_time(uint8_t *timebuf, int bufsize)
+{
+	time_t t = time(NULL);
+	strftime(reinterpret_cast<char*>(timebuf), 64, "%Y/%m/%d %a %H:%M:%S", localtime(&t));
 }
 
 /*referred: https://ryozi.hatenadiary.jp/entry/20101203/1291380670 in 12/30/2018*/
@@ -723,7 +729,7 @@ int main (int argc, char *argv[])
 
 		cout << "Execute ECALL with passing cipher data." << endl;
 
-		uint8_t result_cipher[10000] = {'\0'};
+		uint8_t result_cipher[1000000] = {'\0'};
 		size_t result_len = -9999;
 		sgx_status_t retval;
 

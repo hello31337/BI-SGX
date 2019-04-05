@@ -20,6 +20,11 @@ namespace Btable
 	extern std::vector<SymTbl> Ltable;
 }
 
+namespace Blex
+{
+	extern int get_lineNo();
+}
+
 namespace Bmain
 {
 	std::string result_str = "";
@@ -35,12 +40,11 @@ std::string BISGX_main(std::string code,
 	{
 		Bparse::convert_to_internalCode(code);
 		Bcode::syntaxChk();
-		OCALL_print("SYNCHK");
 		Bcode::execute();
-		OCALL_print("EXECUTE");
 	}
 	catch(std::string bisgx_e)
 	{
+		Bcode::error_Pc = Blex::get_lineNo();
 		*error_flag = true;
 		*error_msg += std::to_string(Bcode::error_Pc);
 		*error_msg += ": ";

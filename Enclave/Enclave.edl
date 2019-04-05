@@ -71,6 +71,8 @@ enclave {
 		void OCALL_dump([in, size=bufsize]uint8_t *char_to_dump, int bufsize);
 		
 		void OCALL_generate_nonce([in, out, size=bufsize]uint8_t* ivbuf, int bufsize);
+
+		void OCALL_get_time([in, out, size=bufsize]uint8_t *timebuf, int bufsize);
 	};
 };
 

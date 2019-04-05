@@ -696,7 +696,7 @@ int main(int argc, char *argv[])
 			//Start encryption
 			unsigned char* sp_key = session.sk;
 			unsigned char* sp_iv;
-			unsigned char intp_cipher[200000]; //intp_cipher[n];
+			unsigned char intp_cipher[2000000]; //intp_cipher[n];
 			int ciphertext_len, tag_len = 16;
 			uint8_t tag[16] = {'\0'};
 
