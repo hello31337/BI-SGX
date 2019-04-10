@@ -56,6 +56,19 @@ enclave {
 			[in, out, size=16]unsigned char *tag,
 			[in, out, size=10000]unsigned char *result_cipher,
 			[out]size_t *res_len);
+
+		public sgx_status_t process_login_info(sgx_ra_context_t context,
+			[user_check]uint8_t *login_info_cipher, size_t cipherlen,
+			[in, out, size=12]uint8_t *p_iv, [in, out, size=16]uint8_t *tag,
+			[in, out, size=1024]uint8_t *result_cipher, [out]size_t *res_len,
+			[in, out, size=32]uint8_t *username,
+			[in, out, size=33]uint8_t *password_hash,
+			[in, out, size=2]uint8_t *privilege);
+
+		public sgx_status_t seal_data(sgx_ra_context_t context,
+			[user_check]uint8_t *data_cipher, size_t cipherlen,
+			[in, out, size=12]uint8_t *p_iv, [in, out, size=16]uint8_t *tag,
+			[in, out, size=1000000]uint8_t *sealed_data, [out]size_t *res_len);
 	};
 
 	untrusted {
@@ -73,6 +86,11 @@ enclave {
 		void OCALL_generate_nonce([in, out, size=bufsize]uint8_t* ivbuf, int bufsize);
 
 		void OCALL_get_time([in, out, size=bufsize]uint8_t *timebuf, int bufsize);
+
+		void OCALL_fwrite([in, size=buflen]uint8_t* buf, int buflen);
+
+		void OCALL_fread([in, out, size=buflen]uint8_t* buf, int buflen);
+
 	};
 };
 

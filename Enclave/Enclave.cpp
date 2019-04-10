@@ -25,6 +25,7 @@ in the License.
 #include <sgx_tae_service.h>
 #include <sgx_tkey_exchange.h>
 #include <sgx_tcrypto.h>
+#include <sgx_tseal.h>
 
 #include "BISGX.h"
 
@@ -207,6 +208,181 @@ sgx_status_t enclave_ra_close(sgx_ra_context_t ctx)
         sgx_status_t ret;
         ret = sgx_ra_close(ctx);
         return ret;
+}
+
+size_t do_sealing(uint8_t *data_plain, uint8_t *sealed_data)
+{
+	size_t sealed_data_size;
+	sgx_status_t status;
+	
+	//int data_length = strlen(reinterpret_cast<char*>(data_to_seal));
+	int data_length = strlen((char*)data_plain);
+
+	sealed_data_size = sgx_calc_sealed_data_size(0, data_length);
+	
+	status = sgx_seal_data(0, NULL, data_length, data_plain,
+		sealed_data_size, (sgx_sealed_data_t*)sealed_data);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print_status(status);
+	}
+	else
+	{
+		OCALL_print("Sealed secret successfully.\n");
+		OCALL_print_int(sealed_data_size);
+	}
+
+	return sealed_data_size;
+}
+
+void unsealing_test(uint8_t *sealed_data)
+{
+	sgx_status_t status;
+	uint32_t decrypt_buf_length;
+
+	decrypt_buf_length = sgx_get_encrypt_txt_len((sgx_sealed_data_t*)sealed_data);
+	uint8_t *decrypt_buf = new uint8_t[decrypt_buf_length];
+
+	OCALL_print_int(decrypt_buf_length);
+
+	status = sgx_unseal_data((sgx_sealed_data_t*)sealed_data, NULL, 0, 
+		decrypt_buf, &decrypt_buf_length);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print_status(status);
+	}
+	else
+	{
+		OCALL_print("Unsealed secret successfully.\nUnsealed data is: ");
+		OCALL_print(reinterpret_cast<char*>(decrypt_buf));
+	}
+}
+
+sgx_status_t process_login_info(sgx_ra_context_t context, uint8_t* login_info_cipher,
+	size_t cipherlen, uint8_t* p_iv, uint8_t* tag, uint8_t *res_cipher, size_t *res_len,
+	uint8_t *username, uint8_t *password_hash, uint8_t *privilege)
+{
+	sgx_status_t status = SGX_SUCCESS;
+	sgx_ec_key_128bit_t sk_key, mk_key;
+	
+	/*Get session key SK to decrypt secret*/
+	status = sgx_ra_get_keys(context, SGX_RA_KEY_SK, &sk_key);
+
+	if(status != SGX_SUCCESS)
+	{
+		const char* message = "Error while obtaining session key.";
+		OCALL_print(message);
+		OCALL_print_status(status);
+		return status;
+	}
+	
+	uint32_t p_iv_len = 12;
+	uint8_t login_info[64] = {'\0'};
+	
+	sgx_aes_gcm_128bit_tag_t tag_t;
+
+	for(int i = 0; i < 16; i++)
+	{
+		tag_t[i] = tag[i];
+	}
+
+	status = sgx_rijndael128GCM_decrypt(&sk_key, (uint8_t *)login_info_cipher, cipherlen,
+		login_info, p_iv, p_iv_len, NULL, 0, &tag_t);
+
+
+	if(status != SGX_SUCCESS)
+	{
+		const char* message = "Error while decrypting SP's secret.";
+		OCALL_print(message);
+		OCALL_print_status(status);
+		return status;
+	}
+
+	uint8_t password[32] = {'\0'};
+	int read_count = 0, pass_rc = 0;
+
+	while(1)
+	{
+		if(login_info[read_count] == '\n')
+		{
+			read_count++;
+			break;
+		}
+
+		username[read_count] = login_info[read_count];
+		read_count++;
+	}
+
+	while(1)
+	{
+		if(login_info[read_count] == '\n')
+		{
+			read_count++;
+			break;
+		}
+
+		password[pass_rc] = login_info[read_count];
+		read_count++;
+		pass_rc++;
+	}
+
+	privilege[0] = login_info[read_count];
+
+	sgx_status_t hashst = 
+		sgx_sha256_msg(password, strlen((char*)password), (sgx_sha256_hash_t*)password_hash);
+
+	return status;
+}
+
+sgx_status_t seal_data(sgx_ra_context_t context, uint8_t *data_cipher,
+	size_t cipherlen, uint8_t *p_iv, uint8_t *tag, uint8_t *sealed_data, size_t *res_len)
+{
+	sgx_status_t status = SGX_SUCCESS;
+	sgx_ec_key_128bit_t sk_key, mk_key;
+	
+	/*Get session key SK to decrypt secret*/
+	status = sgx_ra_get_keys(context, SGX_RA_KEY_SK, &sk_key);
+
+	if(status != SGX_SUCCESS)
+	{
+		const char* message = "Error while obtaining session key.";
+		OCALL_print(message);
+		OCALL_print_status(status);
+		return status;
+	}
+	
+	uint32_t p_iv_len = 12;
+	
+	sgx_aes_gcm_128bit_tag_t tag_t;
+
+	for(int i = 0; i < 16; i++)
+	{
+		tag_t[i] = tag[i];
+	}
+
+	uint8_t data_plain[400000] = {'\0'};
+
+	status = sgx_rijndael128GCM_decrypt(&sk_key, (uint8_t *)data_cipher, cipherlen,
+		data_plain, p_iv, p_iv_len, NULL, 0, &tag_t);
+
+
+	if(status != SGX_SUCCESS)
+	{
+		const char* message = "Error while decrypting SP's secret.";
+		OCALL_print(message);
+		OCALL_print_status(status);
+		return status;
+	}
+
+	{
+		//OCALL_print_int((int)sizeof(intp_code));
+		const char *message = (const char*)data_plain;
+		OCALL_print(message);
+	}
+
+	*res_len = do_sealing(data_plain, sealed_data);
 }
 
 sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_cipher,

@@ -108,7 +108,8 @@ am__objects_1 = byteorder.$(OBJEXT) common.$(OBJEXT) crypto.$(OBJEXT) \
 	hexutil.$(OBJEXT) fileio.$(OBJEXT) base64.$(OBJEXT) \
 	msgio.$(OBJEXT) logfile.$(OBJEXT)
 am_client_OBJECTS = client.$(OBJEXT) sgx_detect_linux.$(OBJEXT) \
-	sgx_stub.$(OBJEXT) quote_size.$(OBJEXT) $(am__objects_1)
+	sgx_stub.$(OBJEXT) quote_size.$(OBJEXT) error_print.$(OBJEXT) \
+	$(am__objects_1)
 nodist_client_OBJECTS = Enclave_u.$(OBJEXT)
 client_OBJECTS = $(am_client_OBJECTS) $(nodist_client_OBJECTS)
 client_DEPENDENCIES =
@@ -387,13 +388,13 @@ SGXSSL_BINDIR = @SGXSSL_BINDIR@
 @SGX_ENABLED_TRUE@	@OPENSSL_CPPFLAGS@ $(am__empty)
 @SGX_ENABLED_FALSE@AM_LDFLAGS = 
 @SGX_ENABLED_TRUE@AM_LDFLAGS = -L$(SGXSDK_LIBDIR)
-SUBDIRS = Enclave 
+SUBDIRS = Enclave
 AM_CXXFLAGS = -std=c++11 
 CLEANFILES = Enclave_u.c Enclave_u.h Enclave.edl Enclave.signed.so
 common = byteorder.c common.cpp crypto.c hexutil.c fileio.c base64.c \
 	msgio.cpp logfile.c
 
-client_SOURCES = client.cpp sgx_detect_linux.c sgx_stub.c quote_size.c \
+client_SOURCES = client.cpp sgx_detect_linux.c sgx_stub.c quote_size.c error_print.cpp \
 	$(common)
 
 nodist_client_SOURCES = Enclave_u.c Enclave_u.h
@@ -404,7 +405,7 @@ sp_SOURCES = sp.cpp agent_wget.cpp iasrequest.cpp $(common) \
 	$(am__append_1)
 sp_LDFLAGS = $(AM_LDFLAGS) @OPENSSL_LDFLAGS@ @CURL_LDFLAGS@
 client_LDADD = -l$(SGX_URTS_LIB) -lsgx_ukey_exchange -l$(SGX_UAE_SERVICE_LIB) \
-	-lcrypto -l:libsgx_capable.a -lpthread -ldl
+	-lcrypto -l:libsgx_capable.a -lpthread -ldl -lmysqlcppconn
 
 sp_LDADD = -lcrypto @CURL_LIBS@
 all: $(BUILT_SOURCES) config.h
@@ -530,6 +531,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/client.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/common.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/crypto.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/error_print.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fileio.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/hexutil.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/iasrequest.Po@am__quote@

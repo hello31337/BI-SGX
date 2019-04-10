@@ -26,7 +26,7 @@ include $(top_srcdir)/build-aux/sgx_app.am
 ##   SGX_UAE_SERVICE_LIB
 ##   SGX_EDGER8R
 
-SUBDIRS = Enclave 
+SUBDIRS = Enclave
 
 ## Supply additional flags to edger8r here. 
 ##
@@ -101,7 +101,7 @@ sp_LDFLAGS= $(AM_LDFLAGS) @OPENSSL_LDFLAGS@ @CURL_LDFLAGS@
 ## targets work on simulation builds.
 
 client_LDADD=-l$(SGX_URTS_LIB) -lsgx_ukey_exchange -l$(SGX_UAE_SERVICE_LIB) \
-	-lcrypto -l:libsgx_capable.a -lpthread -ldl
+	-lcrypto -l:libsgx_capable.a -lpthread -ldl -lmysqlcppconn
 
 sp_LDADD=-lcrypto @CURL_LIBS@
 

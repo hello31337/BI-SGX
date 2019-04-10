@@ -68,8 +68,17 @@ using namespace std;
 #include "quote_size.h"
 
 #include <iostream>
+#include <sstream>
+#include <fstream>
 #include <random>
 #include "error_print.hpp"
+
+#include <mysql_driver.h>
+#include <mysql_connection.h>
+#include <mysql_error.h>
+#include <cppconn/statement.h>
+#include <cppconn/resultset.h>
+#include <cppconn/prepared_statement.h>
 
 #define MAX_LEN 80
 
@@ -139,6 +148,165 @@ sgx_status_t g_sgxrv = SGX_SUCCESS;
 # define ENCLAVE_NAME "Enclave.signed.so"
 #endif
 
+class BISGX_Database
+{
+public:
+	void initDB();
+	int do_login(string username, string password_hash, string privilege);
+	void switchTable(string tbname);
+	void storeDB(string data_to_store);
+	/*
+	should be added is:
+		- username searcher
+		- data inserter (for data owner)
+		- data loader (for interpreter)
+	*/
+
+
+private:
+	sql::Driver *driver;
+	sql::Connection *con;
+	sql::Statement *stmt;
+	sql::ResultSet *res;
+	sql::PreparedStatement *prep_stmt;
+
+	string host;
+	string user;
+	string password;
+	string database;
+	string table;
+};
+
+void BISGX_Database::initDB()
+{
+	cout << "CAUTION: Auto login for debug is enabled." << endl;
+
+	host = "localhost";
+	user = "BI-SGX";
+	password = "bisgx_sample";
+	database = "`BI-SGX`";
+
+	driver = get_driver_instance();
+	con = driver->connect(host, user, password);
+	stmt = con->createStatement();
+
+	stmt->execute("USE " + database);
+
+	table = "userinfo";
+
+	cout << "Database initialization completed." << endl << endl;
+}
+
+void BISGX_Database::switchTable(string tbname)
+{
+	table = tbname;
+}
+
+int BISGX_Database::do_login(string username, string password_hash, string privilege)
+{
+	string tmp;
+	bool isRegistered = false;
+	int privilege_flag;
+
+	res = stmt->executeQuery("SELECT * FROM " + table);
+
+	while(res->next())
+	{
+		tmp = res->getString("username");
+
+		if(username == tmp)
+		{
+			isRegistered = true;
+			break;
+		}
+	}
+
+	if(isRegistered)
+	{
+		res = stmt->executeQuery("SELECT pass_hash FROM " + table
+			+ " WHERE username = '" + username + "'");
+
+		string passhash_tmp;
+
+		while(res->next())
+		{
+			passhash_tmp = res->getString("pass_hash");
+		}
+
+		if(passhash_tmp == password_hash)
+		{
+			cout << "password confirmed." << endl;
+		}
+		else
+		{
+			cout << "wrong password." << endl;
+			return 2;
+		}
+
+		res = stmt->executeQuery("SELECT privilege FROM " + table 
+			+ " WHERE username = '" + username + "'");
+
+		string priv_temp;
+
+		while(res->next())
+		{
+			priv_temp = res->getString("privilege");
+		}
+
+		if(priv_temp[0] == 'O')
+		{
+			privilege_flag = 0;
+		}
+		else if(priv_temp[0] == 'R')
+		{
+			privilege_flag = 1;
+		}
+		else
+		{
+			cerr << "priv:" << priv_temp << endl;
+			cerr << "Error while obtaining privilege." << endl;
+			privilege_flag = 2;
+		}
+	}
+	else
+	{
+		stmt->execute("INSERT INTO " + table + "(username, pass_hash, privilege) "
+			+ "VALUES('" + username + "', '" + password_hash + "', '" + privilege + "')");
+
+		if(privilege == "O")
+		{
+			privilege_flag = 0;
+		}
+		else if(privilege == "R")
+		{
+			privilege_flag = 1;
+		}
+		else
+		{
+			privilege_flag = 2;
+		}
+	}
+
+	return privilege_flag;
+}
+
+void BISGX_Database::storeDB(string data_to_store)
+{
+	table = "stored_data";
+	res = stmt->executeQuery("SELECT COUNT(*) FROM " + table);
+
+	int datanum = -9999;
+
+	while(res->next())
+	{
+		datanum = res->getInt("COUNT(*)");
+	}
+
+	cout << "COUNT:" << datanum << endl;
+
+	//deside the dataset name and store data to DB
+}
+
 void OCALL_print(const char* message)
 {
 	printf("%s\n", message);
@@ -187,6 +355,29 @@ void OCALL_get_time(uint8_t *timebuf, int bufsize)
 	strftime(reinterpret_cast<char*>(timebuf), 64, "%Y/%m/%d %a %H:%M:%S", localtime(&t));
 }
 
+void OCALL_fwrite(uint8_t *buf, int buflen)
+{
+	ofstream ofs("sealed.txt", ios::binary | ios::trunc);
+	
+	ofs.write(reinterpret_cast<const char*>(buf), buflen);
+}
+
+void OCALL_fread(uint8_t *buf, int buflen)
+{
+	string tmp, tmp2;
+
+	ifstream ifs("sealed2.txt", ios::binary);
+
+	if(!ifs)
+	{
+		cout << "failed to open file." << endl;
+	}
+
+
+	ifs.read(reinterpret_cast<char*>(buf), buflen);
+
+}
+
 /*referred: https://ryozi.hatenadiary.jp/entry/20101203/1291380670 in 12/30/2018*/
 int base64_encrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen)
 {
@@ -221,7 +412,6 @@ int base64_encrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen)
 	if(j<dstlen) dst[j] = '\0';
 	return j;
 }
-
 
 int base64_decrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen)
 {
@@ -262,6 +452,205 @@ int base64_decrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen)
 	return j;
 }
 
+int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb)
+{
+	int rv;
+	size_t sz;
+	void **received_cipher;
+	void **received_iv;
+	void **received_tag;
+	void **received_deflen;
+	size_t cipherb64len, ivb64len, tagb64len, recvdeflen;
+
+	rv = msgio->read((void **) &received_cipher, &sz);
+
+	if ( rv == -1 ) {
+		eprintf("system error reading secret from SP\n");
+		return -1;
+	} else if ( rv == 0 ) {
+		eprintf("protocol error reading secret from SP\n");
+		return -1;
+	}
+
+	cipherb64len = sz / 2;
+
+	
+	rv = msgio->read((void **) &received_iv, &sz);
+
+	if(rv == -1) {
+		eprintf("system error reading IV from SP\n");
+		return -1;
+	} else if ( rv == 0 ) {
+		eprintf("protocol error reading IV from SP\n");
+		return -1;
+	}
+
+	ivb64len = sz / 2;
+
+	
+	rv = msgio->read((void **) &received_tag, &sz);
+
+	if ( rv == -1 ) {
+		eprintf("system error reading MAC tag from SP\n");
+		return -1;
+	} else if ( rv == 0 ) {
+		eprintf("protocol error reading MAC tag from SP\n");
+		return -1;
+	}
+
+	tagb64len = sz / 2;
+
+	
+	rv = msgio->read((void **) &received_deflen, &sz);
+
+	if ( rv == -1 ) {
+		eprintf("system error reading default cipher length from SP\n");
+		return -1;
+	} else if ( rv == 0 ) {
+		eprintf("protocol error reading default cipher length from SP\n");
+		return -1;
+	}
+
+	recvdeflen = sz / 2;
+
+
+	/*
+	unsigned char *cipher_to_enclave = (unsigned char *) received_cipher;
+	cout << "cipherlen uint8_t: " << (unsigned char *) received_len << endl;
+	size_t cipherlen = (size_t)received_len[0];
+	*/
+
+	/*Obtain base64-ed cipher text from received pointer*/
+	unsigned char *cipherb64 = (unsigned char *) received_cipher;
+	cout << "Received base64-ed cipher is: " << endl;
+	cout << cipherb64 << endl << endl;
+	
+	size_t cipherb64_len = strlen((char*)cipherb64);
+	cout << "Base64-ed cipher's length is: " << cipherb64_len << endl;
+
+	/*Next, obtain base64-ed IV*/
+	unsigned char *ivb64 = (unsigned char *) received_iv;
+	cout << "Received base64-ed IV is: " << endl;
+	cout << ivb64 << endl << endl;
+
+	/*Then obtain base64-ed MAC tag*/
+	unsigned char *tagb64 = (unsigned char *) received_tag;
+	cout << "Received base64-ed MAC tag is: " << endl;
+	cout << tagb64 << endl << endl;
+
+	size_t tagb64_len = strlen((char*)tagb64);
+	cout << "Base64-ed MAC tag's length is: " << tagb64_len << endl;
+
+
+	/*In addition to that, obtain base64-ed default cipher length*/
+	unsigned char *deflenb64 = (unsigned char *) received_deflen;
+
+	cout << "Received base64-ed default cipher length is: " << endl;
+	cout << deflenb64 << endl << endl;
+
+
+
+	int deflen, rettmp, deftaglen = 16;
+	uint8_t cipherb64lentmp[32] = {'\0'}, tagb64lentmp[32] = {'\0'};
+	uint8_t deflentmp[128] = {'\0'};
+	uint8_t deftaglentmp[32] = {'\0'};
+	uint8_t *cipher_to_enclave;
+	uint8_t iv_to_enclave[12];
+	uint8_t tag_to_enclave[16];
+
+	
+	/*Decrypt default cipher's length from base64*/
+	rettmp = base64_decrypt(deflenb64, recvdeflen, deflentmp, 32);
+	deflen = strtol((char*)deflentmp, NULL, 10);
+
+	cout << "Decrypted default cipher length is: " << deflen << endl;
+	cout << "rettmp: " << rettmp << endl;
+	
+
+	/*Decrypt cipher from base64*/
+	cipher_to_enclave = new uint8_t[cipherb64len];
+	int cipherlen;
+
+	cipherlen = base64_decrypt(cipherb64, cipherb64len, cipher_to_enclave, cipherb64len);
+
+	cout << "Cipher length is: " << cipherlen << endl;
+	cout << "Cipher decoded from base64 is: " << endl;
+	BIO_dump_fp(stdout, (const char*)cipher_to_enclave, cipherlen);
+
+	/*Decrypt iv from base64*/
+	int ivlen;
+	uint8_t iv_tmp[32] = {'\0'};
+
+	ivlen = base64_decrypt(ivb64, ivb64len, iv_tmp, 32);
+	
+	cout << "IV length is (must be 12): " << ivlen << endl;
+	cout << "IV decoded from base64 is: " << endl;
+	BIO_dump_fp(stdout, (const char*)iv_tmp, ivlen);
+
+	for(int i = 0; i < 12; i++)
+	{
+		iv_to_enclave[i] = iv_tmp[i];
+	}
+
+	/*Decrypt tag from base64*/
+	int taglen;
+	uint8_t tag_tmp[32] = {'\0'};
+
+	taglen = base64_decrypt(tagb64, tagb64len, tag_tmp, 32);
+
+	cout << "Tag length is (must be 16, but maybe some offset): " << taglen << endl;
+	cout << "Tag decoded from base64 is: " << endl;
+	BIO_dump_fp(stdout, (const char*)tag_tmp, taglen);
+
+	for(int i = 0; i < 16; i++)
+	{
+		tag_to_enclave[i] = tag_tmp[i];
+	}
+
+	cout << "Execute ECALL with passing cipher data." << endl;
+
+	uint8_t result_cipher[1024] = {'\0'};
+	size_t result_len = -9999;
+	sgx_status_t retval;
+
+	uint8_t username[32] = {'\0'};
+	uint8_t password_hash[33] = {'\0'};
+	uint8_t privilege[2] = {'\0'};
+
+	sgx_status_t login_status = process_login_info(eid, &retval, g_ra_ctx, 
+		cipher_to_enclave, (size_t)deflen, iv_to_enclave, tag_to_enclave, 
+		result_cipher, &result_len, username, password_hash, privilege);
+
+	uint8_t phash_hex[65] = {'\0'};
+
+	/*raw binary may cause bug with SQL statement, so convert to hex string*/
+	for(int i = 0; i < 32; i++)
+	{
+		sprintf((char*)&phash_hex[i*2], "%02x", password_hash[i]);
+	}
+
+	string username_str(reinterpret_cast<char*>(username));
+	string phash_hex_str(reinterpret_cast<char*>(phash_hex));
+	string privilege_str(reinterpret_cast<char*>(privilege));
+
+	try
+	{
+		bdb->switchTable(string("userinfo"));
+		int flag = bdb->do_login(username_str, phash_hex_str, privilege_str);
+
+		return flag;
+	}
+	catch(sql::SQLException &e)
+	{
+		cerr << "# ERR: SQLException in " << __FILE__ << " on line " << __LINE__ << endl;
+		cerr << "# ERR: " << e.what() << endl;
+		cerr << " (MySQL error code: " << e.getErrorCode();
+		cerr << ", SQLState: " << e.getSQLState() << ")" << endl;
+
+		return 2;
+	}
+}
+
 int main (int argc, char *argv[])
 {
 	config_t config;
@@ -274,7 +663,22 @@ int main (int argc, char *argv[])
 	EVP_PKEY *service_public_key= NULL;
 	char have_spid= 0;
 	char flag_stdio= 0;
+	BISGX_Database bdb;
 
+	try
+	{
+		bdb.initDB();
+	}
+	catch(sql::SQLException &e)
+	{
+		cerr << "# ERR: SQLException in " << __FILE__ << " on line " << __LINE__ << endl;
+		cerr << "# ERR: " << e.what() << endl;
+		cerr << " (MySQL error code: " << e.getErrorCode();
+		cerr << ", SQLState: " << e.getSQLState() << ")" << endl;
+
+		return EXIT_FAILURE;
+	}
+	
 	cout << "*** INFO: ISV is running as SERVER(non-SGX term). ***" << endl;
 
 	/* Create a logfile to capture debug output and actual msg data */
@@ -571,8 +975,9 @@ int main (int argc, char *argv[])
 			}
 		}
 
-		cout << "RA completed. Receive secret data from SP... " << endl;
-
+		cout << "RA completed. Receive login info from SP..." << endl;
+		int login_flag = receive_login_info(msgio, eid, &bdb);
+		cout << "Receive secret data from SP... " << endl;
 		
 		int rv;
 		size_t sz;
@@ -731,16 +1136,41 @@ int main (int argc, char *argv[])
 
 		uint8_t result_cipher[1000000] = {'\0'};
 		size_t result_len = -9999;
-		sgx_status_t retval;
+		sgx_status_t retval, ecall_status;
 
-		cout << hex << g_ra_ctx << endl;
-
-		sgx_status_t intp_status = run_interpreter(eid, &retval, g_ra_ctx, cipher_to_enclave,
-			(size_t)deflen, iv_to_enclave, tag_to_enclave, result_cipher, &result_len);
-
-		if(intp_status != SGX_SUCCESS)
+		if(login_flag == 0)//Owner
 		{
-			sgx_error_print(intp_status);
+			seal_data(eid, &retval, g_ra_ctx, cipher_to_enclave, (size_t)deflen,
+				iv_to_enclave, tag_to_enclave, result_cipher, &result_len);
+
+			uint8_t *b64_to_store = new uint8_t[result_len * 2];
+			int b64_to_store_len;
+
+			b64_to_store_len = base64_encrypt(result_cipher, result_len,
+					b64_to_store, result_len * 2);
+
+			OCALL_dump(b64_to_store, b64_to_store_len);
+
+			string string_to_store(reinterpret_cast<char*>(b64_to_store));
+
+			bdb.storeDB(string_to_store);
+			
+
+			//encryption func to return DB store log
+		}
+		else if(login_flag == 1)//Researcher
+		{
+			ecall_status = run_interpreter(eid, &retval, g_ra_ctx, cipher_to_enclave,
+				(size_t)deflen, iv_to_enclave, tag_to_enclave, result_cipher, &result_len);
+		}
+		else
+		{
+			//return password error
+		}
+		
+		if(ecall_status != SGX_SUCCESS)
+		{
+			sgx_error_print(ecall_status);
 		}
 
 		cout << "\nExited ECALL successfully. Check the returned data." << endl;

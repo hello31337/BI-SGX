@@ -141,6 +141,8 @@ int base64_decrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen);
 
 uint8_t* generate_nonce(int sz);
 
+int send_login_info(MsgIO *msgio, ra_session_t session);
+
 char debug = 0;
 char verbose = 0;
 /* Need a global for the signal handler */
@@ -657,6 +659,7 @@ int main(int argc, char *argv[])
 			string intp_filename, intp_str;
 			stringstream ss_intp;
 		
+			int login_ret = send_login_info(msgio, session);
 
 			while(1)
 			{
@@ -2057,6 +2060,197 @@ uint8_t* generate_nonce(int size)
 	cout << endl;
 
 	return nonce_heap;
+}
+
+int send_login_info(MsgIO *msgio, ra_session_t session)
+{
+	ifstream fin_login;
+
+	fin_login.open("login.ini", ios::in);
+
+	if(!fin_login)
+	{
+		cerr << "FileOpenError: Failed to open \"login.ini\".\n" << endl;
+		return -1;
+	}
+	else
+	{
+		cout << "Opened \"login.ini\" successfully." << endl;
+	}
+
+	//start checking whether or not violate the length limit
+	string tmp, login_info;
+
+	//username
+	getline(fin_login, tmp);
+
+	if(tmp.length() > 20)
+	{
+		cerr << "Username must be 20 or less characters." << endl;
+		return -1;
+	}
+
+	login_info += tmp;
+	login_info += "\n";
+	tmp = "";
+
+	//password
+	getline(fin_login, tmp);
+
+	if(tmp.length() > 20)
+	{
+		cerr << "Password must be 20 or less characters." << endl;
+		return -1;
+	}
+
+	login_info += tmp;
+	login_info += "\n";
+	tmp = "";
+
+	//privilege
+	getline(fin_login, tmp);
+
+	if(tmp != "O" && tmp != "R")
+	{
+		cerr << "Privilege must be designated only by \"O\" (Data Owner) or \"R\" (Researcher)." << endl;
+		return -1;
+	}
+
+	login_info += tmp;
+
+	cout << endl;
+	cout << "Loaded login info successfully." << endl;
+	cout << endl;
+
+	//convert login info to uint8_t*
+	const uint8_t* dummy_plain;
+	uint8_t* login_info_plain;
+
+	dummy_plain = reinterpret_cast<unsigned const char*>(login_info.c_str());
+	login_info_plain = const_cast<unsigned char*>(dummy_plain);
+
+
+	//start encrypt
+	unsigned char* sp_key = session.sk;
+	unsigned char* sp_iv;
+	unsigned char login_info_cipher[128];
+	int ciphertext_len, tag_len = 16;
+	uint8_t tag[16] = {'\0'};
+
+	cout << endl;
+	cout << "Start processing login info to send." << endl;
+	cout << "Generate initialization vector." << endl;
+	sp_iv = generate_nonce(12);
+
+	/*AES/GCM's cipher length is equal to the length of plain text*/
+	ciphertext_len = encrypt_data_for_ISV(login_info_plain, strlen((char*)login_info_plain), 
+		sp_key, sp_iv, login_info_cipher, tag);
+
+	if(ciphertext_len == -1)
+	{
+		cerr << "Failed to operate encryption." << endl;
+		cerr << "Abort program..." << endl;
+
+		return -1;
+	}
+	
+	cout << "Encrypted data successfully. Cipher text is:" << endl;
+	BIO_dump_fp(stdout, (const char*)login_info_cipher, ciphertext_len);
+
+	/*convert data to base64 for sending with msgio correctly*/
+	uint8_t cipherb64[256] = {'\0'};
+	int b64dst_len = 256, b64_len;
+
+	b64_len = base64_encrypt(login_info_cipher, ciphertext_len, cipherb64, b64dst_len);
+
+	cout << "==========================================================" << endl;
+	cout << "Base64 format of cipher is: " << endl;
+	cout << cipherb64 << endl << endl;
+	cout << "Length of cipher text is: " << ciphertext_len << endl;
+	cout << "Length of base64-ed cipher is: " << b64_len << endl << endl;
+	cout << "==========================================================" << endl;
+
+	/*Next, convert IV to base64 format*/
+	uint8_t ivb64[64] = {'\0'}; //maybe sufficient with 32-size
+	int ivb64dst_len = 64, ivb64_len;
+
+	ivb64_len = base64_encrypt(sp_iv, 12, ivb64, ivb64dst_len);
+
+	cout << "Base64 format of initialization vector is: " << endl;
+	cout << ivb64 << endl << endl;
+	cout << "Length of base64-ed IV is: " << ivb64_len << endl << endl;
+	cout << "==========================================================" << endl;
+
+	/*Also convert tag to base64 format*/
+	uint8_t tagb64[64] = {'\0'}; //maybe sufficient with 32-size
+	int tagb64dst_len = 64, tagb64_len;
+
+	tagb64_len = base64_encrypt(tag, 16, tagb64, tagb64dst_len);
+
+	cout << "Base64 format of tag is: " << endl;
+	cout << tagb64 << endl << endl;
+	cout << "Length of base64-ed tag is: " << tagb64_len << endl << endl;
+	cout << "==========================================================" << endl;
+	
+	/*In addition to that, need to convert cipher's length to base64*/
+	uint8_t deflenb64[128] = {'\0'}; 
+	uint8_t *uint8tdeflen;
+	int deflenb64dst_len = 32, deflenb64_len;
+
+	uint8tdeflen = const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(to_string(ciphertext_len).c_str()));
+
+	cout << "uint8_t-ed default cipher length is: " << uint8tdeflen << endl << endl;
+
+	deflenb64_len = base64_encrypt(uint8tdeflen, strlen((char*)uint8tdeflen), deflenb64, 32);
+	cout << "Base64 format of default cipher length is: " << endl;
+	cout << deflenb64 << endl << endl;
+	cout << "Length of base64-ed default cipher length is: " << deflenb64_len << endl;
+	cout << "==========================================================" << endl;
+
+
+	/*Send base64-ed secret, its length, MAC tag and its length to ISV*/
+
+	/*cipher*/
+	cout << "==========================================================" << endl;
+	cout << "Send encrypted file to ISV." << endl;
+
+	cout << "Encrypted secret to be sent in base64 is (display again): " << endl;
+	msgio->send(cipherb64, strlen((char*)cipherb64));
+
+	cout << "Complete sending message." << endl;
+	cout << "Please wait for 0.25 sec." << endl;
+	cout << "==========================================================" << endl;
+
+	usleep(250000);
+
+	/*IV*/
+	cout << "Initialization vector to be sent is: " << endl;
+	msgio->send(ivb64, strlen((char*)ivb64));
+
+	cout << "Complete sending IV." << endl;
+	cout << "Please wait for 0.25 sec." << endl;
+	cout << "==========================================================" << endl;
+
+	usleep(250000);
+	
+	/*MAC tag*/
+	cout << "Tag to be sent is: (display again)" << endl;
+	msgio->send(tagb64, strlen((char*)tagb64));
+
+	cout << "Complete sending MAC tag." << endl;
+	cout << "Please wait for 0.25 sec." << endl;
+	cout << "==========================================================" << endl;
+
+	usleep(250000);
+
+	/*default cipher length*/
+	cout << "Default cipher's length to be sent is: " << endl;
+	msgio->send(deflenb64, deflenb64_len);
+
+	cout << "Complete sending default cipher length." << endl;
+	cout << "==========================================================" << endl;
+
+	return 0;
 }
 
 #ifndef _WIN32
