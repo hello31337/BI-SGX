@@ -229,11 +229,63 @@ size_t do_sealing(uint8_t *data_plain, uint8_t *sealed_data)
 	}
 	else
 	{
-		OCALL_print("Sealed secret successfully.\n");
+		OCALL_print("Sealed secret successfully. Sealed Info: \n=====");
 		OCALL_print_int(sealed_data_size);
+		OCALL_dump(sealed_data, sealed_data_size);
+		OCALL_print("=====\nSealed Info End\n");
 	}
 
 	return sealed_data_size;
+}
+
+void sealing_test(int mode)
+{
+	size_t sealed_data_size;
+	sgx_status_t status;
+
+	uint8_t *teststr = reinterpret_cast<uint8_t*>(const_cast<char*>("test string\n"));
+	int data_length = strlen((char*)teststr);
+
+	sealed_data_size = sgx_calc_sealed_data_size(0, data_length);
+
+	uint8_t *sealed_data = new uint8_t[sealed_data_size];
+
+	status = sgx_seal_data(0, NULL, data_length, teststr, sealed_data_size,
+		(sgx_sealed_data_t*)sealed_data);
+
+	OCALL_print("\nsealing test");
+	OCALL_dump(sealed_data, sealed_data_size);
+
+	
+	
+	uint32_t decrypt_buf_length;
+
+	decrypt_buf_length = sgx_get_encrypt_txt_len((sgx_sealed_data_t*)sealed_data);
+	uint8_t *decrypt_buf = new uint8_t[decrypt_buf_length];
+
+	OCALL_print_int(decrypt_buf_length);
+
+	if(mode == 0)
+	{
+		sealing_test(1);
+	}
+
+	status = sgx_unseal_data((sgx_sealed_data_t*)sealed_data, NULL, 0, 
+		decrypt_buf, &decrypt_buf_length);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print_status(status);
+	}
+	else
+	{
+		OCALL_print("Unsealed secret successfully.\nUnsealed data is: ");
+		OCALL_print(reinterpret_cast<char*>(decrypt_buf));
+	}
+
+
+	status = sgx_unseal_data((sgx_sealed_data_t*)sealed_data, NULL, 0, 
+		decrypt_buf, &decrypt_buf_length);
 }
 
 void unsealing_test(uint8_t *sealed_data)
@@ -255,8 +307,7 @@ void unsealing_test(uint8_t *sealed_data)
 	}
 	else
 	{
-		OCALL_print("Unsealed secret successfully.\nUnsealed data is: ");
-		OCALL_print(reinterpret_cast<char*>(decrypt_buf));
+		OCALL_print("Unsealed secret successfully.\n");
 	}
 }
 
@@ -383,6 +434,115 @@ sgx_status_t seal_data(sgx_ra_context_t context, uint8_t *data_cipher,
 	}
 
 	*res_len = do_sealing(data_plain, sealed_data);
+}
+
+sgx_status_t unseal_data(sgx_ra_context_t context, uint8_t *data_cipher, size_t cipherlen)
+{
+	sgx_status_t status = SGX_SUCCESS;
+
+	uint8_t *data_cipher_pass = new uint8_t[cipherlen];
+
+	for(int i = 0; i < cipherlen; i++)
+	{
+		data_cipher_pass[i] = data_cipher[i];
+	}
+
+	unsealing_test(data_cipher_pass);
+
+	return status;
+}
+
+sgx_status_t encrypt_store_status(sgx_ra_context_t context, size_t store_flag, 
+	uint8_t *p_iv, uint8_t *tag, uint8_t *res_cipher, size_t *res_len)
+{
+	sgx_status_t status = SGX_SUCCESS;
+	sgx_ec_key_128bit_t sk_key;
+
+	status = sgx_ra_get_keys(context, SGX_RA_KEY_SK, &sk_key);
+
+	if(status != SGX_SUCCESS)
+	{
+		const char* message = "Error while obtaining session key.";
+		OCALL_print(message);
+		OCALL_print_status(status);
+		return status;
+	}
+
+	sgx_aes_gcm_128bit_tag_t tag_t;
+
+	for(int i = 0; i < 16; i++)
+	{
+		tag_t[i] = tag[i];
+	}
+
+
+	std::string status_message = "";
+
+	if(store_flag == 0)
+	{
+		status_message = "Your data has been stored successfully.\n";
+	}
+	else
+	{
+		status_message = "Error while storing your data to database.\n";
+	}
+	
+	uint8_t timebuf[64] = {'\0'};
+
+	OCALL_get_time(timebuf, 64);
+
+	std::string timeTag = "--------------------------------------------\nDate: ";
+	timeTag += std::string(reinterpret_cast<char*>(timebuf));
+	timeTag += ("\n--------------------------------------------\n");
+
+	status_message.insert(0, timeTag);
+
+	/*processes for encrypt result*/
+	uint8_t *status_msg_char;
+	uint8_t res_iv[12] = {'\0'};
+
+	status_msg_char = reinterpret_cast<uint8_t*>
+		(const_cast<char*>(status_message.c_str()));
+	
+	*res_len = std::strlen((const char*)status_msg_char);
+
+	OCALL_generate_nonce(res_iv, 12);
+
+	/*AES/GCM's cipher length is equal to the length of plain text*/
+	status = sgx_rijndael128GCM_encrypt(&sk_key, status_msg_char, *res_len,
+		res_cipher, res_iv, 12, NULL, 0, &tag_t);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print("Error while encrypting result.");
+		OCALL_print_status(status);
+		return status;
+	}
+
+	for(int i = 0; i < 16; i++)
+	{
+		tag[i] = tag_t[i];
+	}
+
+	for(int i = 0; i < 12; i++)
+	{
+		p_iv[i] = res_iv[i];
+	}
+
+	
+	OCALL_print("\nStart context check before exit ECALL.\n");
+	OCALL_print("Cipher: ");
+	OCALL_dump(res_cipher, *res_len);
+	OCALL_print("\nIV: ");
+	OCALL_dump(p_iv, 12);
+	OCALL_print("\nTag: ");
+	OCALL_dump(tag, 16);
+	OCALL_print("\nResult cipher length: ");
+	OCALL_print_int((int)*res_len);
+	
+
+	return SGX_SUCCESS;
+
 }
 
 sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_cipher,

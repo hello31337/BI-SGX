@@ -69,6 +69,14 @@ enclave {
 			[user_check]uint8_t *data_cipher, size_t cipherlen,
 			[in, out, size=12]uint8_t *p_iv, [in, out, size=16]uint8_t *tag,
 			[in, out, size=1000000]uint8_t *sealed_data, [out]size_t *res_len);
+
+		public sgx_status_t unseal_data(sgx_ra_context_t context,
+			[user_check]uint8_t *data_cipher, size_t cipherlen);
+	
+		public sgx_status_t encrypt_store_status(sgx_ra_context_t context,
+			size_t store_flag, [in, out, size=12]uint8_t *p_iv,
+			[in, out, size=16]uint8_t *tag, [in, out, size=10000]uint8_t *result_cipher,
+			[out]size_t *res_len);
 	};
 
 	untrusted {

@@ -154,7 +154,10 @@ public:
 	void initDB();
 	int do_login(string username, string password_hash, string privilege);
 	void switchTable(string tbname);
-	void storeDB(string data_to_store);
+	void storeDB(string data_to_store, int cipherlen);
+	void setUsername(string username);
+	string do_executeQuery(string sentence, string cond);
+	int do_executeQueryInt(string sentence, string cond);
 	/*
 	should be added is:
 		- username searcher
@@ -175,6 +178,7 @@ private:
 	string password;
 	string database;
 	string table;
+	string username_internal;
 };
 
 void BISGX_Database::initDB()
@@ -290,7 +294,33 @@ int BISGX_Database::do_login(string username, string password_hash, string privi
 	return privilege_flag;
 }
 
-void BISGX_Database::storeDB(string data_to_store)
+string BISGX_Database::do_executeQuery(string sentence, string cond)
+{
+	res = stmt->executeQuery(sentence);
+	string retstr;
+
+	while(res->next())
+	{
+		retstr = res->getString(cond);
+	}
+
+	return retstr;
+}
+
+int BISGX_Database::do_executeQueryInt(string sentence, string cond)
+{
+	res = stmt->executeQuery(sentence);
+	int retint;
+
+	while(res->next())
+	{
+		retint = res->getInt(cond);
+	}
+
+	return retint;
+}
+
+void BISGX_Database::storeDB(string data_to_store, int cipherlen)
 {
 	table = "stored_data";
 	res = stmt->executeQuery("SELECT COUNT(*) FROM " + table);
@@ -304,7 +334,18 @@ void BISGX_Database::storeDB(string data_to_store)
 
 	cout << "COUNT:" << datanum << endl;
 
-	//deside the dataset name and store data to DB
+	string dataset_name = "dataset";
+	dataset_name += to_string(datanum);
+
+	
+	stmt->execute("INSERT INTO " + table + "(dataname, owner, data, cipherlen)"
+		+ "VALUES('" + dataset_name + "', '" + username_internal + "', '"
+		+ data_to_store + "', '" + to_string(cipherlen) + "')");
+}
+
+void BISGX_Database::setUsername(string username)
+{
+	username_internal = username;
 }
 
 void OCALL_print(const char* message)
@@ -632,6 +673,8 @@ int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb)
 	string username_str(reinterpret_cast<char*>(username));
 	string phash_hex_str(reinterpret_cast<char*>(phash_hex));
 	string privilege_str(reinterpret_cast<char*>(privilege));
+
+	bdb->setUsername(username_str);
 
 	try
 	{
@@ -1138,25 +1181,82 @@ int main (int argc, char *argv[])
 		size_t result_len = -9999;
 		sgx_status_t retval, ecall_status;
 
+
 		if(login_flag == 0)//Owner
 		{
-			seal_data(eid, &retval, g_ra_ctx, cipher_to_enclave, (size_t)deflen,
+			size_t store_flag = 0;
+
+			try
+			{
+				ecall_status = seal_data(eid, &retval, g_ra_ctx, cipher_to_enclave, 
+				(size_t)deflen, iv_to_enclave, tag_to_enclave, result_cipher, &result_len);
+
+				if(ecall_status != SGX_SUCCESS)
+				{
+					sgx_error_print(ecall_status);
+					store_flag = 1;
+				}
+
+				uint8_t *b64_to_store = new uint8_t[result_len * 2];
+				int b64_to_store_len;
+
+				b64_to_store_len = base64_encrypt(result_cipher, result_len,
+						b64_to_store, result_len * 2);
+
+				OCALL_dump(b64_to_store, b64_to_store_len);
+
+				string string_to_store(reinterpret_cast<char*>(b64_to_store));
+
+				bdb.storeDB(string_to_store, result_len);
+	
+
+				// test unsealing
+				
+				/*
+				string str_to_load, sentence, cond;
+
+				sentence = "SELECT * FROM stored_data WHERE dataname = 'dataset0'";
+				cond = "data";
+
+				str_to_load = bdb.do_executeQuery(sentence, cond);
+
+				int sealedlen;
+				int sealedb64len = str_to_load.length();
+				uint8_t *sealedb64 = 
+					reinterpret_cast<uint8_t*>(const_cast<char*>(str_to_load.c_str()));
+				uint8_t *sealed_data = new uint8_t[sealedb64len];
+
+				sealedlen = base64_decrypt(sealedb64, sealedb64len, sealed_data, sealedb64len);
+
+				cond = "cipherlen";
+				sealedlen = bdb.do_executeQueryInt(sentence, cond);
+
+				OCALL_dump(sealed_data, sealedlen);
+
+				sgx_status_t ust;
+
+				ust = unseal_data(eid, &retval, g_ra_ctx, sealed_data, (size_t)sealedlen);
+
+				if(ust != SGX_SUCCESS)
+				{
+					sgx_error_print(ust);
+				}
+				*/
+
+			}
+			catch(sql::SQLException &e)
+			{
+				cerr << "# ERR: SQLException in " << __FILE__ << " on line " << __LINE__ << endl;
+				cerr << "# ERR: " << e.what() << endl;
+				cerr << " (MySQL error code: " << e.getErrorCode();
+				cerr << ", SQLState: " << e.getSQLState() << ")" << endl;
+
+				store_flag = 1;
+			}
+
+			ecall_status = encrypt_store_status(eid, &retval, g_ra_ctx, store_flag, 
 				iv_to_enclave, tag_to_enclave, result_cipher, &result_len);
 
-			uint8_t *b64_to_store = new uint8_t[result_len * 2];
-			int b64_to_store_len;
-
-			b64_to_store_len = base64_encrypt(result_cipher, result_len,
-					b64_to_store, result_len * 2);
-
-			OCALL_dump(b64_to_store, b64_to_store_len);
-
-			string string_to_store(reinterpret_cast<char*>(b64_to_store));
-
-			bdb.storeDB(string_to_store);
-			
-
-			//encryption func to return DB store log
 		}
 		else if(login_flag == 1)//Researcher
 		{
