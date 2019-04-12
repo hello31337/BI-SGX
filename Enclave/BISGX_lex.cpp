@@ -52,7 +52,8 @@ namespace Blex
 		{"break"	, Break	}, {"return"	, Return },
 		{"print"	, Print }, {"println"	, Println},
 		{"option"	, Option}, {"input"		, Input	 },
-		{"toint"	, Toint	}, {"exit"		, Exit	 },
+		{"toint"	, Toint	}, {"average"	, Average},
+		{"exit"		, Exit	 },
 		{"("	, Lparen	}, {")"		, Rparen	},
 		{"["	, Lbracket	}, {"]"		, Rbracket	},
 		{"+"	, Plus		}, {"-"		, Minus		},
@@ -306,10 +307,6 @@ Token Blex::nextTkn()
 
 	if(kd == Others)
 	{
-		/*
-		std::string error_msg("Illegal token is detected.\n");
-		return Token(Error, error_msg);
-		*/
 		throw std::string("Illegal token is detected.");
 	}
 

@@ -181,6 +181,8 @@ private:
 	string username_internal;
 };
 
+BISGX_Database bdb;
+
 void BISGX_Database::initDB()
 {
 	cout << "CAUTION: Auto login for debug is enabled." << endl;
@@ -419,6 +421,19 @@ void OCALL_fread(uint8_t *buf, int buflen)
 
 }
 
+void OCALL_get_sealed_length(char *dataset_name, int *sealed_length)
+{
+	string dataname_str(dataset_name);
+
+	string query = "SELECT * FROM stored_data WHERE dataname = '";
+	query += dataname_str;
+	query += "'";
+
+	string cond = "cipherlen";
+
+	*sealed_length = bdb.do_executeQueryInt(query, cond);
+}
+
 /*referred: https://ryozi.hatenadiary.jp/entry/20101203/1291380670 in 12/30/2018*/
 int base64_encrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen)
 {
@@ -491,6 +506,28 @@ int base64_decrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen)
 	
 	if(j<dstlen) dst[j] = '\0';
 	return j;
+}
+
+void OCALL_load_db(uint8_t *sealed_data, int buflen, char *dataset_name)
+{
+	string dataname_str(dataset_name);
+
+	string query = "SELECT * FROM stored_data WHERE dataname = '";
+	query += dataname_str;
+	query += "'";
+
+	string cond = "data";
+
+	string str_to_load = bdb.do_executeQuery(query, cond);
+
+	int sealedlen;
+	int sealedb64len = str_to_load.length();
+
+	uint8_t *sealedb64 = 
+		reinterpret_cast<uint8_t*>(const_cast<char*>(str_to_load.c_str()));
+
+	sealedlen = base64_decrypt(sealedb64,
+		sealedb64len, sealed_data, sealedb64len);
 }
 
 int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb)
@@ -706,8 +743,7 @@ int main (int argc, char *argv[])
 	EVP_PKEY *service_public_key= NULL;
 	char have_spid= 0;
 	char flag_stdio= 0;
-	BISGX_Database bdb;
-
+	
 	try
 	{
 		bdb.initDB();

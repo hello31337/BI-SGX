@@ -99,6 +99,12 @@ enclave {
 
 		void OCALL_fread([in, out, size=buflen]uint8_t* buf, int buflen);
 
+		void OCALL_get_sealed_length([in, size=32]char *dataset_name,
+			[out]int *sealed_length);
+
+		void OCALL_load_db([in, out, size=buflen]uint8_t *sealed_data,
+			int buflen, [in, size=32]char *dataset_name);
+
 	};
 };
 

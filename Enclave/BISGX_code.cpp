@@ -70,6 +70,11 @@ namespace Bmain
 	extern std::string result_str;
 }
 
+namespace Bbfunc
+{
+	extern double executeAverage(std::string dataset_name);
+}
+
 void Bcode::syntaxChk()
 {
 	syntaxChk_mode = true;
@@ -215,7 +220,6 @@ void Bcode::statement()
 	switch(code.kind)
 	{
 		case If:
-			OCALL_print("If");
 			/*
 			get_expression() returns the result of If sentence's condition
 			expression.
@@ -264,7 +268,6 @@ void Bcode::statement()
 			break;
 
 		case While:
-			OCALL_print("While");
 			while(1)
 			{
 				if(!get_expression(While, 0))
@@ -289,7 +292,6 @@ void Bcode::statement()
 			break;
 
 		case For:
-			OCALL_print("For");
 			save = nextCode();
 			varAdrs = get_memAdrs(save);
 
@@ -341,7 +343,6 @@ void Bcode::statement()
 			break;
 
 		case Fcall:
-			OCALL_print("Fcall");
 			fncCall(code.symNbr);
 			(void)stk.pop();
 			++Pc;
@@ -349,20 +350,17 @@ void Bcode::statement()
 			break;
 
 		case Func:
-			OCALL_print("Func");
 			Pc = end_line + 1;
 			
 			break;
 
 		case Print: case Println:
-			OCALL_print("Print");
 			sysFncExec(code.kind);
 			++Pc;
 
 			break;
 
 		case Gvar: case Lvar:
-			OCALL_print("Gvar/Lvar");
 			varAdrs = get_memAdrs(code);
 			expression('=', 0);
 			
@@ -374,7 +372,6 @@ void Bcode::statement()
 			break;
 
 		case Return:
-			OCALL_print("Return");
 			wkVal = returnValue;
 			code = nextCode();
 
@@ -398,7 +395,6 @@ void Bcode::statement()
 			break;
 
 		case Break:
-			OCALL_print("Break");
 			code = nextCode();
 			post_if_set(break_Flg);
 
@@ -410,20 +406,12 @@ void Bcode::statement()
 			break;
 
 		case Exit:
-			OCALL_print("Exit");
 			code = nextCode();
 			exit_Flg = true;
 
 			break;
 
 		case Option: case Var: case EofLine:
-			if(code.kind == Option)
-				OCALL_print("Option");
-			else if(code.kind == Var)
-				OCALL_print("Var");
-			else
-				OCALL_print("EofLine");
-
 			++Pc;
 
 			break;
@@ -541,7 +529,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 
 				break;
 
-			case Toint: case Input:
+			case Toint: case Input: case Average:
 				sysFncExec_syntax(kd);
 
 				break;
@@ -596,7 +584,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 
 			break;
 
-		case Toint: case Input:
+		case Toint: case Input: case Average:
 			sysFncExec(kd);
 
 			break;
@@ -858,6 +846,15 @@ void Bcode::sysFncExec_syntax(TknKind kd)
 
 			break;
 
+		case Average:
+			code = nextCode();
+			code = chk_nextCode(code, '(');
+			code = chk_nextCode(code, String);
+			code = chk_nextCode(code, ')');
+			stk.push(1.0);
+
+			break;
+
 		case Print: case Println:
 			do
 			{
@@ -894,9 +891,20 @@ void Bcode::sysFncExec(TknKind kd)
 			break;
 
 		case Input:
-			throw std::string("Using Toint is forbidden.\nThis function will be deleted in near futue.");
+			throw std::string("Using Input is forbidden.\nThis function will be deleted in near future.");
 
+		case Average:
+		{
+			code = nextCode(); //LParen
+			code = nextCode(); //String
 
+			double temp = Bbfunc::executeAverage(code.text);
+			stk.push(temp);
+
+			code = nextCode(); //Need to skip RParen
+
+			break;
+		}
 		case Print: case Println:
 			do
 			{
