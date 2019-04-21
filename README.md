@@ -1,4 +1,4 @@
-# BI-SGX: Bioinformatic Interpreter on Intel(R) SGX
+# BI-SGX : Bioinformatic Interpreter on SGX-based Secure Computing Cloud
 
 ## Introduction
 These codes are interpreter which uses Intel(R) SGX's protection features and specializes for bioinformatical computations. The basical framework of these codes are heavily based on [Intel(R) Software Guard Extensions (SGX) Remote Attestation End-to-End Sample](https://github.com/intel/sgx-ra-sample).
