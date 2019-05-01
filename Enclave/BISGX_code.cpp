@@ -731,7 +731,7 @@ void Bcode::fncCall_syntax(int fncNbr)
 
 	code = chk_nextCode(code, ')');
 
-	OCALL_print_int(fncNbr);
+	//OCALL_print_int(fncNbr);
 
 	if(argCt != Btable::Gtable[fncNbr].args)
 	{

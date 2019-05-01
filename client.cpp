@@ -71,6 +71,7 @@ using namespace std;
 #include <sstream>
 #include <fstream>
 #include <random>
+#include <chrono>
 #include "error_print.hpp"
 
 #include <mysql_driver.h>
@@ -126,6 +127,8 @@ MsgIO *msgio = NULL;
 
 sgx_ra_context_t g_ra_ctx = 0xdeaddead;
 sgx_status_t g_sgxrv = SGX_SUCCESS;
+
+chrono::system_clock::time_point chrono_start, chrono_end;
 
 #define MODE_ATTEST 0x0
 #define MODE_EPID 	0x1
@@ -432,6 +435,24 @@ void OCALL_get_sealed_length(char *dataset_name, int *sealed_length)
 	string cond = "cipherlen";
 
 	*sealed_length = bdb.do_executeQueryInt(query, cond);
+}
+
+void OCALL_chrono_start()
+{
+	chrono_start = chrono::system_clock::now();
+}
+
+void OCALL_chrono_end()
+{
+	chrono_end = chrono::system_clock::now();
+	double elapsed = chrono::duration_cast<chrono::milliseconds>
+		(chrono_end - chrono_start).count();
+
+	cout << endl;
+	cout << "-----------------------------------------------" << endl;
+	cout << "Elapsed time is: " << elapsed << "[ms]" << endl;
+	cout << "-----------------------------------------------" << endl;
+	cout << endl;
 }
 
 /*referred: https://ryozi.hatenadiary.jp/entry/20101203/1291380670 in 12/30/2018*/
@@ -1045,7 +1066,9 @@ int main (int argc, char *argv[])
 			isRAed = true;
 			if ( config.mode == MODE_ATTEST )
 			{
+				OCALL_chrono_start();
 				do_attestation(eid, &config);
+				OCALL_chrono_end();
 			} else if ( config.mode == MODE_EPID || config.mode == MODE_QUOTE ) {
 				do_quote(eid, &config);
 			} else {
@@ -1224,6 +1247,7 @@ int main (int argc, char *argv[])
 
 			try
 			{
+				OCALL_chrono_start();
 				ecall_status = seal_data(eid, &retval, g_ra_ctx, cipher_to_enclave, 
 				(size_t)deflen, iv_to_enclave, tag_to_enclave, result_cipher, &result_len);
 
@@ -1245,6 +1269,7 @@ int main (int argc, char *argv[])
 
 				bdb.storeDB(string_to_store, result_len);
 	
+				OCALL_chrono_end();
 
 				// test unsealing
 				

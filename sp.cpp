@@ -65,6 +65,7 @@ using namespace std;
 #include <fstream>
 #include <sstream>
 #include <random>
+#include <chrono>
 
 #ifdef _WIN32
 #define strdup(x) _strdup(x)
@@ -142,6 +143,27 @@ int base64_decrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen);
 uint8_t* generate_nonce(int sz);
 
 int send_login_info(MsgIO *msgio, ra_session_t session);
+
+chrono::system_clock::time_point chrono_start, chrono_end;
+
+void OCALL_chrono_start()
+{
+	chrono_start = chrono::system_clock::now();
+}
+
+void OCALL_chrono_end()
+{
+	chrono_end = chrono::system_clock::now();
+	double elapsed = chrono::duration_cast<chrono::milliseconds>
+		(chrono_end - chrono_start).count();
+
+	cout << endl;
+	cout << "-----------------------------------------------" << endl;
+	cout << "Elapsed time is: " << elapsed << "[ms]" << endl;
+	cout << "-----------------------------------------------" << endl;
+	cout << endl;
+}
+
 
 char debug = 0;
 char verbose = 0;
@@ -594,6 +616,8 @@ int main(int argc, char *argv[])
  	/* If we're running in server mode, we'll block here.  */
 
 	//while ( msgio->server_loop() ) {
+
+	OCALL_chrono_start();
 		ra_session_t session;
 		sgx_ra_msg1_t msg1;
 		sgx_ra_msg2_t msg2;
@@ -638,6 +662,8 @@ int main(int argc, char *argv[])
 			eprintf("error processing msg3\n");
 			goto disconnect;
 		}
+
+		OCALL_chrono_end();
 
 		//sending msg4 complete; starting data encryption with session key "SK"
 		if(flag_BIOS)

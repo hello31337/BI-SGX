@@ -229,10 +229,12 @@ size_t do_sealing(uint8_t *data_plain, uint8_t *sealed_data)
 	}
 	else
 	{
+		/*
 		OCALL_print("Sealed secret successfully. Sealed Info: \n=====");
 		OCALL_print_int(sealed_data_size);
 		OCALL_dump(sealed_data, sealed_data_size);
 		OCALL_print("=====\nSealed Info End\n");
+		*/
 	}
 
 	return sealed_data_size;
@@ -253,9 +255,10 @@ void sealing_test(int mode)
 	status = sgx_seal_data(0, NULL, data_length, teststr, sealed_data_size,
 		(sgx_sealed_data_t*)sealed_data);
 
+	/*
 	OCALL_print("\nsealing test");
 	OCALL_dump(sealed_data, sealed_data_size);
-
+	*/
 	
 	
 	uint32_t decrypt_buf_length;
@@ -263,7 +266,7 @@ void sealing_test(int mode)
 	decrypt_buf_length = sgx_get_encrypt_txt_len((sgx_sealed_data_t*)sealed_data);
 	uint8_t *decrypt_buf = new uint8_t[decrypt_buf_length];
 
-	OCALL_print_int(decrypt_buf_length);
+	//OCALL_print_int(decrypt_buf_length);
 
 	if(mode == 0)
 	{
@@ -279,8 +282,10 @@ void sealing_test(int mode)
 	}
 	else
 	{
+		/*
 		OCALL_print("Unsealed secret successfully.\nUnsealed data is: ");
 		OCALL_print(reinterpret_cast<char*>(decrypt_buf));
+		*/
 	}
 
 
@@ -296,7 +301,7 @@ void unsealing_test(uint8_t *sealed_data)
 	decrypt_buf_length = sgx_get_encrypt_txt_len((sgx_sealed_data_t*)sealed_data);
 	uint8_t *decrypt_buf = new uint8_t[decrypt_buf_length];
 
-	OCALL_print_int(decrypt_buf_length);
+	//OCALL_print_int(decrypt_buf_length);
 
 	status = sgx_unseal_data((sgx_sealed_data_t*)sealed_data, NULL, 0, 
 		decrypt_buf, &decrypt_buf_length);
@@ -307,7 +312,7 @@ void unsealing_test(uint8_t *sealed_data)
 	}
 	else
 	{
-		OCALL_print("Unsealed secret successfully.\n");
+		//OCALL_print("Unsealed secret successfully.\n");
 	}
 }
 
@@ -529,7 +534,7 @@ sgx_status_t encrypt_store_status(sgx_ra_context_t context, size_t store_flag,
 		p_iv[i] = res_iv[i];
 	}
 
-	
+	/*
 	OCALL_print("\nStart context check before exit ECALL.\n");
 	OCALL_print("Cipher: ");
 	OCALL_dump(res_cipher, *res_len);
@@ -539,7 +544,7 @@ sgx_status_t encrypt_store_status(sgx_ra_context_t context, size_t store_flag,
 	OCALL_dump(tag, 16);
 	OCALL_print("\nResult cipher length: ");
 	OCALL_print_int((int)*res_len);
-	
+	*/
 
 	return SGX_SUCCESS;
 
@@ -588,11 +593,13 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_ciphe
 		return status;
 	}
 
+	/*
 	{
 		//OCALL_print_int((int)sizeof(intp_code));
 		const char *message = (const char*)intp_code;
 		OCALL_print(message);
 	}
+	*/
 
 	std::string intp_str(reinterpret_cast<char*>(intp_code));
 
@@ -623,8 +630,8 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_ciphe
 
 	intp_result.insert(0, timeTag);
 
-	OCALL_print("\ninterpreter execution result:");
-	OCALL_print(intp_result.c_str());
+	//OCALL_print("\ninterpreter execution result:");
+	//OCALL_print(intp_result.c_str());
 
 	/*processes for encrypt result*/
 	uint8_t *intp_res_char;
@@ -659,6 +666,7 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_ciphe
 		p_iv[i] = res_iv[i];
 	}
 
+	/*
 	OCALL_print("\nStart context check before exit ECALL.\n");
 	OCALL_print("Cipher: ");
 	OCALL_dump(res_cipher, *res_len);
@@ -668,6 +676,7 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_ciphe
 	OCALL_dump(tag, 16);
 	OCALL_print("\nResult cipher length: ");
 	OCALL_print_int((int)*res_len);
+	*/
 
 	return SGX_SUCCESS;
 }

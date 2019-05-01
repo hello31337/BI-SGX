@@ -67,7 +67,11 @@ First, prepare the build system (GNU* automake and autoconf) by running `bootstr
   $ make
   ```
 
-As this is a code sample and not a full application, 'make install' not recommended.
+Or you can also execute these 3 commands by executing following command:
+
+```
+$ source make.sh
+```
 
 Both `make clean` and `make distclean` are supported.
 
@@ -75,12 +79,51 @@ Both `make clean` and `make distclean` are supported.
 In this project, libcurl is supported for SP as user agent on Linux to communicate with IAS. Using wget is not recommended, but if you want, you can change setting following Intel`s original RA sample's README.
 
 ## Usage
+### Set up DB for secret data storing
+There must be two tables within one database.
+
+One is table named `userinfo`, which is for management of login info. The format of `userinfo` is following:
+
+```
++-----------+----------+------+-----+---------+-------+
+| Field     | Type     | Null | Key | Default | Extra |
++-----------+----------+------+-----+---------+-------+
+| dataname  | text     | YES  |     | NULL    |       |
+| owner     | text     | YES  |     | NULL    |       |
+| data      | longblob | YES  |     | NULL    |       |
+| cipherlen | int(11)  | YES  |     | NULL    |       |
++-----------+----------+------+-----+---------+-------+
+```
+
+And another is named `stored_data`, which is for storing secret data. The format of `stored_data` is following: 
+
+```
++-----------+------+------+-----+---------+-------+
+| Field     | Type | Null | Key | Default | Extra |
++-----------+------+------+-----+---------+-------+
+| username  | text | YES  |     | NULL    |       |
+| pass_hash | text | YES  |     | NULL    |       |
+| privilege | text | YES  |     | NULL    |       |
++-----------+------+------+-----+---------+-------+
+```
+
+So ISV have to create above tables as aforementioned formats before start BI-SGX.
+
+After started program, ISV must initialize DB login info. As default, this initialization will be done by following context:
+
+``` C++
+host = "localhost";
+user = "BI-SGX";
+password = "bisgx_sample";
+database = "`BI-SGX`";
+```
+But hardcoded login context is extremely insecure, so you should edit `void BISGX_Database::initDB()` in `client.cpp` to manually enter login context using like `cout`. More secure login method will be impremented in the future.
+
 ### Start programs
 You can run ISV (SGX server) code by entering command:
 ```bash
 $ ./run-isv
 ```
-
 To run SP (non-SGX client) code, enter command:
 ```bash
 $ ./run-sp
@@ -93,23 +136,41 @@ You can also use `./run-client` to start ISV and `./run-server` to start SP, but
 After complete RA, you can send your file to ISV from SP.
 
 #### If you are data owner (use data storage feature)
-(This feature is under construction)
+Firstly, you have to prepare login context as `login.ini`. Username, password, and authority-type should be described like following:
+
+``` bash
+testuser # username 
+testpass12345 # password
+O # authority type. "O" for data owner and "R" for researcher.
+```
+
+Secondly, you have to prepare data to store to cloud server.
+Currently 2 data types are acceptable; One is to be set of `int` or `double`, and another is to be set of `char`. The separator must be newline (`\n`).
+
+After completing remote attestation, you will be required to input filename of dataset. Then cloud DB storing will be executed and the result status will be returned from cloud server.
 
 #### If you are researcher (use interpreter feature)
-Select interpreter code file which you selected.
+Firstly, you have to prepare `login.ini` as with the case of data owner.
+Note that authority type is `R` for researcher.
+
+After completing remote attestation, you will be required to input filename of interpreter code. Then interpreter code will be executed at cloud's enclave and the result will be returned from cloud server.
 
 ## Specification/grammer of BI-SGX 
-(TBD)
+See at BI-SGX's wiki for interpreter's specifications and grammers.
 
 ## Implemented features
 * Inverted client-server communication model
 * Remote Attestation between SP and ISV
 * Cryptographic features to send secret in secure
 * Load secret into enclave
+* DB storing feature for data owner
+* Interpreter which runs inside enclave
 
 ## TODO
-* Implement interpreter
-* Implement data storage feature
+* Implement more built-in functions for interpreter
 
 ## LICENSE
 All of these codes are developed and distributed under Intel Sample Source Code license. See the LICENSE file for detail.
+
+And many of BI-SGX's interpreter implementation owe to following book:
+ISBN978-4-7973-6881-9「明快入門 インタプリタ開発」
