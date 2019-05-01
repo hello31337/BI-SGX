@@ -156,7 +156,7 @@ Note that authority type is `R` for researcher.
 After completing remote attestation, you will be required to input filename of interpreter code. Then interpreter code will be executed at cloud's enclave and the result will be returned from cloud server.
 
 ## Specification/grammer of BI-SGX 
-See at BI-SGX's wiki for interpreter's specifications and grammers.
+See at [BI-SGX's wiki](https://github.com/hello31337/BI-SGX) for interpreter's specifications and grammers.
 
 ## Implemented features
 * Inverted client-server communication model
