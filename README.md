@@ -29,6 +29,12 @@ Contrary to Intel's original RA sample, these codes are developed for Linux plat
   * [Intel SGX Software Development Kit and Platform Software package for Linux](https://github.com/intel/linux-sgx)
   * [Intel SGX Driver for Linux](https://github.com/intel/linux-sgx-driver)
 
+* Ensure that you have installed MySQL and MySQL Connector/C++.
+```
+$ sudo apt install mysql-server
+$ sudo apt install libmysqlcppconn-dev
+```
+
 * Run the following commands to install the required packages to build the RA code sample (this assumes you have installed the dependencies for the Intel SGX SDK and PSW package)
   
   * On CentOS 7.4
