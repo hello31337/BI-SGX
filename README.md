@@ -97,6 +97,7 @@ One is table named `userinfo`, which is for management of login info. The format
 | dataname  | text     | YES  |     | NULL    |       |
 | owner     | text     | YES  |     | NULL    |       |
 | data      | longblob | YES  |     | NULL    |       |
+| datatype  | text     | YES  |     | NULL    |       |
 | cipherlen | int(11)  | YES  |     | NULL    |       |
 +-----------+----------+------+-----+---------+-------+
 ```
