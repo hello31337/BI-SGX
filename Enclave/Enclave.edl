@@ -63,12 +63,14 @@ enclave {
 			[in, out, size=1024]uint8_t *result_cipher, [out]size_t *res_len,
 			[in, out, size=32]uint8_t *username,
 			[in, out, size=33]uint8_t *password_hash,
-			[in, out, size=2]uint8_t *privilege);
+			[in, out, size=2]uint8_t *privilege,
+			[in, out, size=8]uint8_t *datatype);
 
 		public sgx_status_t seal_data(sgx_ra_context_t context,
 			[user_check]uint8_t *data_cipher, size_t cipherlen,
 			[in, out, size=12]uint8_t *p_iv, [in, out, size=16]uint8_t *tag,
-			[in, out, size=1000000]uint8_t *sealed_data, [out]size_t *res_len);
+			[in, out, size = est_seal_len]uint8_t *sealed_data,
+			size_t est_seal_len, [out]size_t *res_len);
 
 		public sgx_status_t unseal_data(sgx_ra_context_t context,
 			[user_check]uint8_t *data_cipher, size_t cipherlen);
@@ -105,6 +107,9 @@ enclave {
 		void OCALL_load_db([in, out, size=buflen]uint8_t *sealed_data,
 			int buflen, [in, size=32]char *dataset_name);
 
+		void OCALL_chrono_start();
+
+		void OCALL_chrono_end();
 	};
 };
 

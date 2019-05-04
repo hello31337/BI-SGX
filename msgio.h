@@ -58,9 +58,11 @@ public:
 	void disconnect();
 
 	int read(void **dest, size_t *sz);
+	int read_nd(void **dest, size_t *sz);
 
 	void send_partial(void *buf, size_t f_size);
 	void send(void *buf, size_t f_size);
+	void send_nd(void *buf, size_t f_size);
 };
 
 #ifdef __cplusplus

@@ -220,6 +220,9 @@ size_t do_sealing(uint8_t *data_plain, uint8_t *sealed_data)
 
 	sealed_data_size = sgx_calc_sealed_data_size(0, data_length);
 	
+	OCALL_print("estimated sealed_data_size is: ");
+	OCALL_print_int(sealed_data_size);
+
 	status = sgx_seal_data(0, NULL, data_length, data_plain,
 		sealed_data_size, (sgx_sealed_data_t*)sealed_data);
 
@@ -318,7 +321,7 @@ void unsealing_test(uint8_t *sealed_data)
 
 sgx_status_t process_login_info(sgx_ra_context_t context, uint8_t* login_info_cipher,
 	size_t cipherlen, uint8_t* p_iv, uint8_t* tag, uint8_t *res_cipher, size_t *res_len,
-	uint8_t *username, uint8_t *password_hash, uint8_t *privilege)
+	uint8_t *username, uint8_t *password_hash, uint8_t *privilege, uint8_t *datatype)
 {
 	sgx_status_t status = SGX_SUCCESS;
 	sgx_ec_key_128bit_t sk_key, mk_key;
@@ -357,7 +360,7 @@ sgx_status_t process_login_info(sgx_ra_context_t context, uint8_t* login_info_ci
 	}
 
 	uint8_t password[32] = {'\0'};
-	int read_count = 0, pass_rc = 0;
+	int read_count = 0, pass_rc = 0, type_rc = 0;
 
 	while(1)
 	{
@@ -385,6 +388,23 @@ sgx_status_t process_login_info(sgx_ra_context_t context, uint8_t* login_info_ci
 	}
 
 	privilege[0] = login_info[read_count];
+	
+	if(privilege[0] == 'O')
+	{
+		read_count += 2;
+
+		while(1)
+		{
+			if(login_info[read_count] == '\0')
+			{
+				break;
+			}
+
+			datatype[type_rc] = login_info[read_count];
+			read_count++;
+			type_rc++;
+		}
+	}
 
 	sgx_status_t hashst = 
 		sgx_sha256_msg(password, strlen((char*)password), (sgx_sha256_hash_t*)password_hash);
@@ -393,7 +413,8 @@ sgx_status_t process_login_info(sgx_ra_context_t context, uint8_t* login_info_ci
 }
 
 sgx_status_t seal_data(sgx_ra_context_t context, uint8_t *data_cipher,
-	size_t cipherlen, uint8_t *p_iv, uint8_t *tag, uint8_t *sealed_data, size_t *res_len)
+	size_t cipherlen, uint8_t *p_iv, uint8_t *tag, uint8_t *sealed_data, 
+	size_t est_seal_len, size_t *res_len)
 {
 	sgx_status_t status = SGX_SUCCESS;
 	sgx_ec_key_128bit_t sk_key, mk_key;
@@ -418,7 +439,10 @@ sgx_status_t seal_data(sgx_ra_context_t context, uint8_t *data_cipher,
 		tag_t[i] = tag[i];
 	}
 
-	uint8_t data_plain[400000] = {'\0'};
+
+	//uint8_t data_plain[400000] = {'\0'};
+	uint8_t *data_plain = new uint8_t[cipherlen + 1]();
+
 
 	status = sgx_rijndael128GCM_decrypt(&sk_key, (uint8_t *)data_cipher, cipherlen,
 		data_plain, p_iv, p_iv_len, NULL, 0, &tag_t);
@@ -434,9 +458,11 @@ sgx_status_t seal_data(sgx_ra_context_t context, uint8_t *data_cipher,
 
 	{
 		//OCALL_print_int((int)sizeof(intp_code));
-		const char *message = (const char*)data_plain;
-		OCALL_print(message);
+		//const char *message = (const char*)data_plain;
+		//OCALL_print(message);
 	}
+
+	OCALL_print("enter do_sealing.");
 
 	*res_len = do_sealing(data_plain, sealed_data);
 }
@@ -608,8 +634,10 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_ciphe
 	std::string intp_error_msg = "";
 	std::string intp_result = "";
 
+	OCALL_chrono_start();
 	intp_result = BISGX_main(intp_str, &intp_error_flag, &intp_error_msg);
-	
+	OCALL_chrono_end();
+
 	if(intp_error_flag == true)
 	{
 		intp_result = "Error at interpreter\n" + intp_error_msg;

@@ -53,7 +53,7 @@ namespace Blex
 		{"print"	, Print }, {"println"	, Println},
 		{"option"	, Option}, {"input"		, Input	 },
 		{"toint"	, Toint	}, {"average"	, Average},
-		{"exit"		, Exit	 },
+		{"edist"	, Edist }, {"exit"		, Exit	 },
 		{"("	, Lparen	}, {")"		, Rparen	},
 		{"["	, Lbracket	}, {"]"		, Rbracket	},
 		{"+"	, Plus		}, {"-"		, Minus		},
@@ -87,40 +87,6 @@ namespace Bmisc
 
 using namespace Blex;
 
-std::string BISGX_lex_main(std::string code)
-{
-	inputstr = code;
-
-	/*temporary returns fixed string for debug*/
-	return std::string("Under Construction");
-
-	/*
-	std::string resultstr("text		kind  intVal\n");
-	initChTyp();
-
-	istr_len = inputstr.length();
-
-	for(token = nextTkn(); token.kind != EofTkn && token.kind != Error; token = nextTkn())
-	{
-		resultstr += token.text;
-		resultstr += "		   ";
-		resultstr += std::to_string(token.kind);
-		resultstr += "  ";
-		resultstr += std::to_string(token.intVal);
-		resultstr += "\n";
-
-		std::string lendum = std::to_string(resultstr.length());
-	}
-
-	if(token.kind == Error)
-	{
-		resultstr = token.text;
-	}
-
-	return resultstr;
-	*/
-}
-
 void Blex::initChTyp()
 {
 	int i;
@@ -153,7 +119,7 @@ void Blex::BufferInit(std::string code)
 	endOfFile_F = false;
 	srcLineno = 0;
 
-	OCALL_print("BufferInit complete.");
+	//OCALL_print("BufferInit complete.");
 }
 
 void Blex::nextLine()
@@ -189,7 +155,7 @@ void Blex::nextLine()
 
 	if(std::strlen(buf) > LIN_SIZ)
 	{
-		throw std::string("Only 255 or less chars are allowed par single code line.");
+		throw std::string("Only 255 or less chars are allowed per single code line.");
 	}
 	if(++srcLineno > MAX_LINE)
 	{

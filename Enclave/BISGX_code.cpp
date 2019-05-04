@@ -73,6 +73,7 @@ namespace Bmain
 namespace Bbfunc
 {
 	extern double executeAverage(std::string dataset_name);
+	extern double executeEdist(std::string dataset_name);
 }
 
 void Bcode::syntaxChk()
@@ -529,7 +530,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 
 				break;
 
-			case Toint: case Input: case Average:
+			case Toint: case Input: case Average: case Edist:
 				sysFncExec_syntax(kd);
 
 				break;
@@ -584,7 +585,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 
 			break;
 
-		case Toint: case Input: case Average:
+		case Toint: case Input: case Average: case Edist:
 			sysFncExec(kd);
 
 			break;
@@ -855,6 +856,15 @@ void Bcode::sysFncExec_syntax(TknKind kd)
 
 			break;
 
+		case Edist:
+			code = nextCode();
+			code = chk_nextCode(code, '(');
+			code = chk_nextCode(code, String);
+			code = chk_nextCode(code, ')');
+			stk.push(1.0);
+
+			break;
+
 		case Print: case Println:
 			do
 			{
@@ -905,6 +915,21 @@ void Bcode::sysFncExec(TknKind kd)
 
 			break;
 		}
+
+		case Edist:
+		{
+			code = nextCode(); //LParen
+			code = nextCode(); //String
+
+			double temp = Bbfunc::executeEdist(code.text);
+			stk.push(temp);
+
+			code = nextCode(); //Need to skip RParen
+			//Maybe should use chk_nextCode()
+	
+			break;
+		}
+
 		case Print: case Println:
 			do
 			{

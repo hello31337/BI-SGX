@@ -332,6 +332,73 @@ again:
 	return -1;
 }
 
+int MsgIO::read_nd(void **dest, size_t *sz) //no display
+{
+	ssize_t bread= 0;
+	bool repeat= true;
+	int ws;
+
+	if (use_stdio) return read_msg(dest, sz);
+
+	/* 
+	 * We don't know how many bytes are coming, so read until we find a
+	 * newline.
+	 */
+
+	if ( sz ) *sz= 0;
+
+	while (repeat) {
+again:
+		bread= recv(s, lbuffer, sizeof(lbuffer), 0);
+		if ( bread == -1 ) {
+			if ( errno == EINTR ) goto again;
+			perror("recv");
+			return -1;
+		}
+		if ( bread > 0 ) {
+			size_t idx;
+
+			if ( debug ) eprintf("+++ read %ld bytes from socket\n", bread);
+			rbuffer.append(lbuffer, bread);
+			idx= rbuffer.find("\r\n");
+			if ( idx == string::npos ) {
+				idx= rbuffer.find('\n');
+				if ( idx == string::npos ) continue;
+				ws= 1;
+			} else ws= 2;
+
+			if ( idx == 0 ) return 1;
+			else if ( idx %2 ) {
+				eprintf("read odd byte count %zu\n", idx);
+				return 0;
+			}
+			if ( sz != NULL ) *sz= idx;
+
+			*dest= (char *) malloc(idx/2);
+			if ( *dest == NULL ) {
+				perror("malloc");
+				return -1;
+			}
+
+			/*
+			if (debug) {
+				edividerWithText("read buffer");
+				fwrite(rbuffer.c_str(), 1, idx, stdout);
+				printf("\n");
+				edivider();
+			}
+			*/
+
+			from_hexstring((unsigned char *) *dest, rbuffer.c_str(), idx/2);
+			rbuffer.erase(0, idx+ws);
+
+			return 1;
+		} else return 0;
+	}
+	
+	return -1;
+}
+
 void MsgIO::send(void *src, size_t sz)
 {
 	ssize_t bsent;
@@ -363,6 +430,39 @@ again:
 		wbuffer.erase(0, bsent);
 	}
 }
+
+void MsgIO::send_nd(void *src, size_t sz) //no display
+{
+	ssize_t bsent;
+	size_t len;
+
+	if (use_stdio) {
+		send_msg(src, sz);
+		return;
+	}
+
+	wbuffer.append(hexstring(src, sz));
+	wbuffer.append("\n");
+
+	while ( len= wbuffer.length() ) {
+again:
+		bsent= ::send(s, wbuffer.c_str(), (int) len, 0);
+		if ( bsent == -1 ) {
+			if (errno == EINTR) goto again;
+			perror("send");
+			return;
+		}
+		//fwrite(wbuffer.c_str(), 1, bsent, stdout);
+
+		if ( bsent == len ) {
+			wbuffer.clear();
+			return;
+		}
+		
+		wbuffer.erase(0, bsent);
+	}
+}
+
 
 void MsgIO::send_partial(void *src, size_t sz)
 {

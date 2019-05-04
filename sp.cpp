@@ -717,15 +717,17 @@ int main(int argc, char *argv[])
 			dummy_plain = reinterpret_cast<unsigned const char*>(intp_str.c_str());
 			intp_plain = const_cast<unsigned char*>(dummy_plain);
 
+			/*
 			cout << "Display the content of loaded file for check: \n" << endl;
 			cout << "===============================================" << endl;
 			cout << intp_plain << endl;
 			cout << "===============================================" << endl;
+			*/
 
 			//Start encryption
 			unsigned char* sp_key = session.sk;
 			unsigned char* sp_iv;
-			unsigned char intp_cipher[2000000]; //intp_cipher[n];
+			unsigned char *intp_cipher = new uint8_t[10000000]();
 			int ciphertext_len, tag_len = 16;
 			uint8_t tag[16] = {'\0'};
 
@@ -743,21 +745,24 @@ int main(int argc, char *argv[])
 				return -1;
 			}
 			
-			cout << "Encrypted data successfully. Cipher text is:" << endl;
-			BIO_dump_fp(stdout, (const char*)intp_cipher, ciphertext_len);
+			cout << "Encrypted data successfully." << endl;
+			//BIO_dump_fp(stdout, (const char*)intp_cipher, ciphertext_len);
 
 			/*convert data to base64 for sending with msgio correctly*/
-			uint8_t cipherb64[300000] = {'\0'};
-			int b64dst_len = 300000, b64_len;
+			//uint8_t cipherb64[300000] = {'\0'};
+			uint8_t *cipherb64 = new uint8_t[ciphertext_len * 2]();
+			int b64dst_len = ciphertext_len * 2, b64_len;
 
 			b64_len = base64_encrypt(intp_cipher, ciphertext_len, cipherb64, b64dst_len);
-
+			
+			/*
 			cout << "==========================================================" << endl;
 			cout << "Base64 format of cipher is: " << endl;
 			cout << cipherb64 << endl << endl;
 			cout << "Length of cipher text is: " << ciphertext_len << endl;
 			cout << "Length of base64-ed cipher is: " << b64_len << endl << endl;
 			cout << "==========================================================" << endl;
+			*/
 
 			/*Next, convert IV to base64 format*/
 			uint8_t ivb64[64] = {'\0'}; //maybe sufficient with 32-size
@@ -799,19 +804,7 @@ int main(int argc, char *argv[])
 
 			/*Send base64-ed secret, its length, MAC tag and its length to ISV*/
 
-			/*cipher*/
-			cout << "==========================================================" << endl;
-			cout << "Send encrypted file to ISV." << endl;
-
-			cout << "Encrypted secret to be sent in base64 is (display again): " << endl;
-			msgio->send(cipherb64, strlen((char*)cipherb64));
-
-			cout << "Complete sending message." << endl;
-			cout << "Please wait for 0.25 sec." << endl;
-			cout << "==========================================================" << endl;
-
-			usleep(250000);
-
+			
 			/*IV*/
 			cout << "Initialization vector to be sent is: " << endl;
 			msgio->send(ivb64, strlen((char*)ivb64));
@@ -837,8 +830,20 @@ int main(int argc, char *argv[])
 			msgio->send(deflenb64, deflenb64_len);
 
 			cout << "Complete sending default cipher length." << endl;
+			cout << "Please wait for 0.25 sec." << endl;
 			cout << "==========================================================" << endl;
+			
+			usleep(250000);
 
+			/*cipher*/
+			cout << "==========================================================" << endl;
+			cout << "Send encrypted file to ISV." << endl;
+
+			cout << "Encrypted secret to be sent in base64 is (display again): " << endl;
+			msgio->send_nd(cipherb64, strlen((char*)cipherb64));
+
+			cout << "Complete sending message." << endl;
+			cout << "==========================================================" << endl;
 
 			/*Receive result contexts from ISV*/
 			int rv;
@@ -855,10 +860,10 @@ int main(int argc, char *argv[])
 			rv = msgio->read((void **) &received_cipher, &sz);
 
 			if ( rv == -1 ) {
-				eprintf("system error reading secret from SP\n");
+				eprintf("system error reading secret from ISV\n");
 				return 0;
 			} else if ( rv == 0 ) {
-				eprintf("protocol error reading secret from SP\n");
+				eprintf("protocol error reading secret from ISV\n");
 				return 0;
 			}
 
@@ -868,10 +873,10 @@ int main(int argc, char *argv[])
 			rv = msgio->read((void **) &received_iv, &sz);
 
 			if(rv == -1) {
-				eprintf("system error reading IV from SP\n");
+				eprintf("system error reading IV from ISV\n");
 				return 0;
 			} else if ( rv == 0 ) {
-				eprintf("protocol error reading IV from SP\n");
+				eprintf("protocol error reading IV from ISV\n");
 				return 0;
 			}
 
@@ -881,10 +886,10 @@ int main(int argc, char *argv[])
 			rv = msgio->read((void **) &received_tag, &sz);
 
 			if ( rv == -1 ) {
-				eprintf("system error reading MAC tag from SP\n");
+				eprintf("system error reading MAC tag from ISV\n");
 				return 0;
 			} else if ( rv == 0 ) {
-				eprintf("protocol error reading MAC tag from SP\n");
+				eprintf("protocol error reading MAC tag from ISV\n");
 				return 0;
 			}
 
@@ -894,10 +899,10 @@ int main(int argc, char *argv[])
 			rv = msgio->read((void **) &received_deflen, &sz);
 
 			if ( rv == -1 ) {
-				eprintf("system error reading default cipher length from SP\n");
+				eprintf("system error reading default cipher length from ISV\n");
 				return 0;
 			} else if ( rv == 0 ) {
-				eprintf("protocol error reading default cipher length from SP\n");
+				eprintf("protocol error reading default cipher length from ISV\n");
 				return 0;
 			}
 
@@ -2143,6 +2148,23 @@ int send_login_info(MsgIO *msgio, ra_session_t session)
 	}
 
 	login_info += tmp;
+	login_info += "\n";
+
+	//datatype, if Owner
+	if(tmp == "O")
+	{
+		tmp = "";
+		getline(fin_login, tmp);
+
+		if(tmp != "integer" && tmp != "genome")
+		{
+			cerr << "Datatype must be designated only by \"integer\" or \"genome\"." << endl;
+			cout << "tmp: " << tmp << endl;
+			exit(1);
+		}
+
+		login_info += tmp;
+	}
 
 	cout << endl;
 	cout << "Loaded login info successfully." << endl;

@@ -157,7 +157,7 @@ public:
 	void initDB();
 	int do_login(string username, string password_hash, string privilege);
 	void switchTable(string tbname);
-	void storeDB(string data_to_store, int cipherlen);
+	void storeDB(string data_to_store, string datatype, int cipherlen);
 	void setUsername(string username);
 	string do_executeQuery(string sentence, string cond);
 	int do_executeQueryInt(string sentence, string cond);
@@ -325,7 +325,7 @@ int BISGX_Database::do_executeQueryInt(string sentence, string cond)
 	return retint;
 }
 
-void BISGX_Database::storeDB(string data_to_store, int cipherlen)
+void BISGX_Database::storeDB(string data_to_store, string datatype, int cipherlen)
 {
 	table = "stored_data";
 	res = stmt->executeQuery("SELECT COUNT(*) FROM " + table);
@@ -343,9 +343,9 @@ void BISGX_Database::storeDB(string data_to_store, int cipherlen)
 	dataset_name += to_string(datanum);
 
 	
-	stmt->execute("INSERT INTO " + table + "(dataname, owner, data, cipherlen)"
+	stmt->execute("INSERT INTO " + table + "(dataname, owner, data, datatype, cipherlen)"
 		+ "VALUES('" + dataset_name + "', '" + username_internal + "', '"
-		+ data_to_store + "', '" + to_string(cipherlen) + "')");
+		+ data_to_store + "', '" + datatype + "', '" + to_string(cipherlen) + "')");
 }
 
 void BISGX_Database::setUsername(string username)
@@ -551,7 +551,7 @@ void OCALL_load_db(uint8_t *sealed_data, int buflen, char *dataset_name)
 		sealedb64len, sealed_data, sealedb64len);
 }
 
-int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb)
+int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb, string datatype_str)
 {
 	int rv;
 	size_t sz;
@@ -621,31 +621,31 @@ int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb)
 
 	/*Obtain base64-ed cipher text from received pointer*/
 	unsigned char *cipherb64 = (unsigned char *) received_cipher;
-	cout << "Received base64-ed cipher is: " << endl;
-	cout << cipherb64 << endl << endl;
+	//cout << "Received base64-ed cipher is: " << endl;
+	//cout << cipherb64 << endl << endl;
 	
 	size_t cipherb64_len = strlen((char*)cipherb64);
-	cout << "Base64-ed cipher's length is: " << cipherb64_len << endl;
+	//cout << "Base64-ed cipher's length is: " << cipherb64_len << endl;
 
 	/*Next, obtain base64-ed IV*/
 	unsigned char *ivb64 = (unsigned char *) received_iv;
-	cout << "Received base64-ed IV is: " << endl;
-	cout << ivb64 << endl << endl;
+	//cout << "Received base64-ed IV is: " << endl;
+	//cout << ivb64 << endl << endl;
 
 	/*Then obtain base64-ed MAC tag*/
 	unsigned char *tagb64 = (unsigned char *) received_tag;
-	cout << "Received base64-ed MAC tag is: " << endl;
-	cout << tagb64 << endl << endl;
+	//cout << "Received base64-ed MAC tag is: " << endl;
+	//cout << tagb64 << endl << endl;
 
 	size_t tagb64_len = strlen((char*)tagb64);
-	cout << "Base64-ed MAC tag's length is: " << tagb64_len << endl;
+	//cout << "Base64-ed MAC tag's length is: " << tagb64_len << endl;
 
 
 	/*In addition to that, obtain base64-ed default cipher length*/
 	unsigned char *deflenb64 = (unsigned char *) received_deflen;
 
-	cout << "Received base64-ed default cipher length is: " << endl;
-	cout << deflenb64 << endl << endl;
+	//cout << "Received base64-ed default cipher length is: " << endl;
+	//cout << deflenb64 << endl << endl;
 
 
 
@@ -672,15 +672,18 @@ int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb)
 
 	cipherlen = base64_decrypt(cipherb64, cipherb64len, cipher_to_enclave, cipherb64len);
 
+	/*
 	cout << "Cipher length is: " << cipherlen << endl;
 	cout << "Cipher decoded from base64 is: " << endl;
 	BIO_dump_fp(stdout, (const char*)cipher_to_enclave, cipherlen);
+	*/
 
 	/*Decrypt iv from base64*/
 	int ivlen;
 	uint8_t iv_tmp[32] = {'\0'};
 
 	ivlen = base64_decrypt(ivb64, ivb64len, iv_tmp, 32);
+	
 	
 	cout << "IV length is (must be 12): " << ivlen << endl;
 	cout << "IV decoded from base64 is: " << endl;
@@ -690,6 +693,7 @@ int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb)
 	{
 		iv_to_enclave[i] = iv_tmp[i];
 	}
+
 
 	/*Decrypt tag from base64*/
 	int taglen;
@@ -715,10 +719,12 @@ int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb)
 	uint8_t username[32] = {'\0'};
 	uint8_t password_hash[33] = {'\0'};
 	uint8_t privilege[2] = {'\0'};
+	uint8_t datatype[8] = {'\0'};
 
 	sgx_status_t login_status = process_login_info(eid, &retval, g_ra_ctx, 
 		cipher_to_enclave, (size_t)deflen, iv_to_enclave, tag_to_enclave, 
-		result_cipher, &result_len, username, password_hash, privilege);
+		result_cipher, &result_len, username, password_hash, privilege,
+		datatype);
 
 	uint8_t phash_hex[65] = {'\0'};
 
@@ -731,6 +737,9 @@ int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb)
 	string username_str(reinterpret_cast<char*>(username));
 	string phash_hex_str(reinterpret_cast<char*>(phash_hex));
 	string privilege_str(reinterpret_cast<char*>(privilege));
+	string dtstr_tmp(reinterpret_cast<char*>(datatype));
+
+	datatype_str = dtstr_tmp;
 
 	bdb->setUsername(username_str);
 
@@ -1077,8 +1086,10 @@ int main (int argc, char *argv[])
 			}
 		}
 
+		string datatype = "";
+
 		cout << "RA completed. Receive login info from SP..." << endl;
-		int login_flag = receive_login_info(msgio, eid, &bdb);
+		int login_flag = receive_login_info(msgio, eid, &bdb, datatype);
 		cout << "Receive secret data from SP... " << endl;
 		
 		int rv;
@@ -1088,19 +1099,6 @@ int main (int argc, char *argv[])
 		void **received_tag;
 		void **received_deflen;
 		size_t cipherb64len, ivb64len, tagb64len, recvdeflen;
-
-		rv = msgio->read((void **) &received_cipher, &sz);
-
-		if ( rv == -1 ) {
-			eprintf("system error reading secret from SP\n");
-			return 0;
-		} else if ( rv == 0 ) {
-			eprintf("protocol error reading secret from SP\n");
-			return 0;
-		}
-
-		cipherb64len = sz / 2;
-
 		
 		rv = msgio->read((void **) &received_iv, &sz);
 
@@ -1140,6 +1138,19 @@ int main (int argc, char *argv[])
 
 		recvdeflen = sz / 2;
 
+		rv = msgio->read_nd((void **) &received_cipher, &sz);
+
+		if ( rv == -1 ) {
+			eprintf("system error reading secret from SP\n");
+			return 0;
+		} else if ( rv == 0 ) {
+			eprintf("protocol error reading secret from SP\n");
+			return 0;
+		}
+
+		cipherb64len = sz / 2;
+
+
 
 		/*
 		unsigned char *cipher_to_enclave = (unsigned char *) received_cipher;
@@ -1149,8 +1160,8 @@ int main (int argc, char *argv[])
 
 		/*Obtain base64-ed cipher text from received pointer*/
 		unsigned char *cipherb64 = (unsigned char *) received_cipher;
-		cout << "Received base64-ed cipher is: " << endl;
-		cout << cipherb64 << endl << endl;
+		//cout << "Received base64-ed cipher is: " << endl;
+		//cout << cipherb64 << endl << endl;
 		
 		size_t cipherb64_len = strlen((char*)cipherb64);
 		cout << "Base64-ed cipher's length is: " << cipherb64_len << endl;
@@ -1200,9 +1211,9 @@ int main (int argc, char *argv[])
 
 		cipherlen = base64_decrypt(cipherb64, cipherb64len, cipher_to_enclave, cipherb64len);
 
-		cout << "Cipher length is: " << cipherlen << endl;
-		cout << "Cipher decoded from base64 is: " << endl;
-		BIO_dump_fp(stdout, (const char*)cipher_to_enclave, cipherlen);
+		//cout << "Cipher length is: " << cipherlen << endl;
+		//cout << "Cipher decoded from base64 is: " << endl;
+		//BIO_dump_fp(stdout, (const char*)cipher_to_enclave, cipherlen);
 
 		/*Decrypt iv from base64*/
 		int ivlen;
@@ -1236,7 +1247,8 @@ int main (int argc, char *argv[])
 
 		cout << "Execute ECALL with passing cipher data." << endl;
 
-		uint8_t result_cipher[1000000] = {'\0'};
+		//uint8_t result_cipher[20000000] = {'\0'};
+		uint8_t *result_cipher;
 		size_t result_len = -9999;
 		sgx_status_t retval, ecall_status;
 
@@ -1244,12 +1256,14 @@ int main (int argc, char *argv[])
 		if(login_flag == 0)//Owner
 		{
 			size_t store_flag = 0;
+			result_cipher = new uint8_t[cipherlen + 1000];
 
 			try
 			{
 				OCALL_chrono_start();
 				ecall_status = seal_data(eid, &retval, g_ra_ctx, cipher_to_enclave, 
-				(size_t)deflen, iv_to_enclave, tag_to_enclave, result_cipher, &result_len);
+				(size_t)deflen, iv_to_enclave, tag_to_enclave, result_cipher,
+				cipherlen + 1000, &result_len);
 
 				if(ecall_status != SGX_SUCCESS)
 				{
@@ -1263,46 +1277,13 @@ int main (int argc, char *argv[])
 				b64_to_store_len = base64_encrypt(result_cipher, result_len,
 						b64_to_store, result_len * 2);
 
-				OCALL_dump(b64_to_store, b64_to_store_len);
+				//OCALL_dump(b64_to_store, b64_to_store_len);
 
 				string string_to_store(reinterpret_cast<char*>(b64_to_store));
 
-				bdb.storeDB(string_to_store, result_len);
+				bdb.storeDB(string_to_store, datatype, result_len);
 	
 				OCALL_chrono_end();
-
-				// test unsealing
-				
-				/*
-				string str_to_load, sentence, cond;
-
-				sentence = "SELECT * FROM stored_data WHERE dataname = 'dataset0'";
-				cond = "data";
-
-				str_to_load = bdb.do_executeQuery(sentence, cond);
-
-				int sealedlen;
-				int sealedb64len = str_to_load.length();
-				uint8_t *sealedb64 = 
-					reinterpret_cast<uint8_t*>(const_cast<char*>(str_to_load.c_str()));
-				uint8_t *sealed_data = new uint8_t[sealedb64len];
-
-				sealedlen = base64_decrypt(sealedb64, sealedb64len, sealed_data, sealedb64len);
-
-				cond = "cipherlen";
-				sealedlen = bdb.do_executeQueryInt(sentence, cond);
-
-				OCALL_dump(sealed_data, sealedlen);
-
-				sgx_status_t ust;
-
-				ust = unseal_data(eid, &retval, g_ra_ctx, sealed_data, (size_t)sealedlen);
-
-				if(ust != SGX_SUCCESS)
-				{
-					sgx_error_print(ust);
-				}
-				*/
 
 			}
 			catch(sql::SQLException &e)
@@ -1321,6 +1302,7 @@ int main (int argc, char *argv[])
 		}
 		else if(login_flag == 1)//Researcher
 		{
+			result_cipher = new uint8_t[1000000];
 			ecall_status = run_interpreter(eid, &retval, g_ra_ctx, cipher_to_enclave,
 				(size_t)deflen, iv_to_enclave, tag_to_enclave, result_cipher, &result_len);
 		}
