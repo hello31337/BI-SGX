@@ -634,9 +634,29 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_ciphe
 	std::string intp_error_msg = "";
 	std::string intp_result = "";
 
-	OCALL_chrono_start();
+	
+	//OCALL_chrono_start();
 	intp_result = BISGX_main(intp_str, &intp_error_flag, &intp_error_msg);
-	OCALL_chrono_end();
+	//OCALL_chrono_end();
+	
+
+	/*
+	double elapsed, elapsed_total = 0.0;
+
+	OCALL_print("Testing interpreter for N times...");
+	
+	for(int i = 0; i < 1000; i++)
+	{
+		OCALL_chrono_start();
+		intp_result = BISGX_main(intp_str, &intp_error_flag, &intp_error_msg);
+		OCALL_chrono_end_get_time(&elapsed);
+
+		elapsed_total += elapsed;
+	}
+
+	OCALL_print("total interpreter execution time is:");
+	OCALL_print(std::to_string(elapsed_total).c_str());
+	*/
 
 	if(intp_error_flag == true)
 	{

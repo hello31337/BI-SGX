@@ -12,6 +12,10 @@ namespace Bcode
 	extern void syntaxChk();
 	extern void execute();
 	extern int error_Pc;
+	extern std::vector<std::string> strLITERAL;
+	extern std::vector<double> nbrLITERAL;
+	extern BISGX_stack stk;
+	extern BISGX_memory Dmem;
 }
 
 namespace Btable
@@ -35,6 +39,8 @@ std::string BISGX_main(std::string code,
 {
 	*error_flag = false;
 	*error_msg = "Line ";
+
+	Bmain::result_str = "";
 
 	try
 	{
@@ -63,6 +69,22 @@ std::string BISGX_main(std::string code,
 
 		return std::string("Error");
 	}
+
+	/*terminate contexts*/
+	Bcode::intercode.clear();
+	Btable::Gtable.clear();
+	Btable::Ltable.clear();
+	Bcode::strLITERAL.clear();
+	Bcode::nbrLITERAL.clear();
+
+	std::vector<char*>().swap(Bcode::intercode);
+	std::vector<SymTbl>().swap(Btable::Gtable);
+	std::vector<SymTbl>().swap(Btable::Ltable);
+	std::vector<std::string>().swap(Bcode::strLITERAL);
+	std::vector<double>().swap(Bcode::nbrLITERAL);
+
+	Bcode::stk.destruct();
+	Bcode::Dmem.destruct();
 
 	return Bmain::result_str;
 }

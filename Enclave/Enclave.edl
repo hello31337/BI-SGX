@@ -110,6 +110,8 @@ enclave {
 		void OCALL_chrono_start();
 
 		void OCALL_chrono_end();
+
+		void OCALL_chrono_end_get_time([out]double *elapsed);
 	};
 };
 

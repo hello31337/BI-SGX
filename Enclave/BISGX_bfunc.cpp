@@ -182,6 +182,10 @@ double Bbfunc::executeAverage(std::string dataset_name)
 
 	average /= datanum;
 
+	/*destruct heap*/
+	delete sealed_data;
+	delete decrypt_buf;
+
 	return average;
 }
 
@@ -247,6 +251,10 @@ double Bbfunc::executeEdist(std::string dataset_name)
 	{
 		reted += start_edist(edit_distance_fixed_<2, std::string, 256>, genome_query, genome_vec[i], 1, "bpv-256");
 	}
+
+	/*destruct heap*/
+	delete sealed_data;
+	delete decrypt_buf;
 
 	return (double)reted / (double)gv_size;
 
