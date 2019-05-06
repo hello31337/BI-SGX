@@ -1,6 +1,6 @@
 /* ------------------------ACKNOWLEDGEMENT-----------------------*
 * Edit distance part of this source code is from following site  *
-*  -> https://gist.github.com/aflc/6482587						 *
+*  -> https://gist.github.com/aflc/6482587                       *
 *----------------------------------------------------------------*/
 
 #include "BISGX.h"
