@@ -262,7 +262,7 @@ void Bparse::convert_rest()
 				{
 					if(tmpTb.name == "main")
 					{
-						throw std::string("main function cannot be called by user code.");
+						throw std::string("Main function cannot be called by user code.");
 					}
 
 					setCode(Fcall, tblNbr);
