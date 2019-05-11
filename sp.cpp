@@ -2156,9 +2156,10 @@ int send_login_info(MsgIO *msgio, ra_session_t session)
 		tmp = "";
 		getline(fin_login, tmp);
 
-		if(tmp != "integer" && tmp != "genome")
+		if(tmp != "integer" && tmp != "genome" && tmp != "FASTA")
 		{
-			cerr << "Datatype must be designated only by \"integer\" or \"genome\"." << endl;
+			cerr << "Datatype must be designated only by following: " << endl;
+			cout << "integer, genome, FASTA" << endl;
 			cout << "tmp: " << tmp << endl;
 			exit(1);
 		}

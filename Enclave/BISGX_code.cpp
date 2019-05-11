@@ -74,6 +74,7 @@ namespace Bbfunc
 {
 	extern double executeAverage(std::string dataset_name);
 	extern double executeEdist(std::string dataset_name);
+	extern double executeNWAlignment(std::string dataset_name);
 }
 
 void Bcode::syntaxChk()
@@ -530,7 +531,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 
 				break;
 
-			case Toint: case Input: case Average: case Edist:
+			case Toint: case Input: case Average: case Edist: case Galign:
 				sysFncExec_syntax(kd);
 
 				break;
@@ -585,7 +586,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 
 			break;
 
-		case Toint: case Input: case Average: case Edist:
+		case Toint: case Input: case Average: case Edist: case Galign:
 			sysFncExec(kd);
 
 			break;
@@ -865,6 +866,15 @@ void Bcode::sysFncExec_syntax(TknKind kd)
 
 			break;
 
+		case Galign:
+			code = nextCode();
+			code = chk_nextCode(code, '(');
+			code = chk_nextCode(code, String);
+			code = chk_nextCode(code, ')');
+			stk.push(1.0);
+
+			break;
+
 		case Print: case Println:
 			do
 			{
@@ -925,8 +935,21 @@ void Bcode::sysFncExec(TknKind kd)
 			stk.push(temp);
 
 			code = nextCode(); //Need to skip RParen
-			//Maybe should use chk_nextCode()
+
 	
+			break;
+		}
+
+		case Galign:
+		{
+			code = nextCode(); //LParen
+			code = nextCode(); //String
+
+			double temp = Bbfunc::executeNWAlignment(code.text);
+			stk.push(temp);
+
+			code = nextCode(); // Need to skip RParen
+
 			break;
 		}
 

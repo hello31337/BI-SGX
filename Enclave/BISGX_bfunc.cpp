@@ -14,22 +14,155 @@
 #include <bitset>
 #include <array>
 
+#define gap_penalty -6
+#define gap_open 0
+	
+#define Ala 0
+#define Cys 1
+#define Asp 2
+#define Glu 3
+#define Phe 4
+#define Gly 5
+#define His 6
+#define Ile 7
+#define Lys 8
+#define Leu 9
+#define Met 10
+#define Asn 11
+#define Pro 12
+#define Gln 13
+#define Arg 14
+#define Ser 15
+#define Thr 16
+#define Val 17
+#define Trp 18
+#define Tyr 19
+#define UNKNOWN 20
+	
+#define NUM_OF_AA 20
 
 namespace Bbfunc
 {
 	/*protos*/
 	double executeAverage(std::string dataset_name);
 	double executeEdist(std::string dataset_name);
+	double executeNWAlignment(std::string dataset_name);
 }
 
 
+char blosumAminoArray[20] =
+{
+	'A', 'G', 'S', 'T', 'N', 'D', 'E', 'Q', 'K', 'R', 'H',
+	'M', 'I', 'L', 'V', 'F', 'Y', 'W', 'P', 'C'
+};
 
+int blosumScoreArray[420] =
+{
+	 0,	 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, //dummy column
+	 4,  0,  1,  0, -2, -2, -1, -1, -1, -1, -2, -1, -1, -1,  0, -2, -2, -3, -1,  0,
+	 0,  6,  0, -2,  0, -1, -2, -2, -2, -2, -2, -3, -4, -4, -3, -3, -3, -2, -2, -3,
+	 1,  0,  4,  1,  1,  0,  0,  0,  0, -1, -1, -1, -2, -2, -2, -2, -2, -3, -1, -1,
+	 0, -2,  1,  5,  0, -1, -1, -1, -1, -1, -2, -1, -1, -1,  0, -2, -2, -2, -1, -1,
+	-2,  0,  1,  0,  6,  1,  0,  0,  0,  0,  1, -2, -3, -3, -3, -3, -2, -4, -2, -3,
+	-2, -1,  0, -1,  1,  6,  2,  0, -1, -2, -1, -3, -3, -4, -3, -3, -3, -4, -1, -3,
+	-1, -2,  0, -1,  0,  2,  5,  2,  1,  0,  0, -2, -3, -3, -2, -3, -2, -3, -1, -4,
+	-1, -2,  0, -1,  0,  0,  2,  5,  1,  1,  0,  0, -3, -2, -2, -3, -1, -2, -1, -3,
+	-1, -2,  0, -1,  0, -1,  1,  1,  5,  2, -1, -1, -3, -2, -2, -3, -2, -3, -1, -3,
+	-1, -2, -1, -1,  0, -2,  0,  1,  2,  5,  0, -1, -3, -2, -3, -3, -2, -3, -2, -3,
+	-2, -2, -1, -2,  1, -1,  0,  0, -1,  0,  8, -2, -3, -3, -3, -1,  2, -2, -2, -3,
+	-1, -3, -1, -1, -2, -3, -2,  0, -1, -1, -2,  5,  1,  2,  1,  0, -1, -1, -2, -1,
+	-1, -4, -2, -1, -3, -3, -3, -3, -3, -3, -3,  1,  4,  2,  3,  0, -1, -3, -3, -1,
+	-1, -4, -2, -1, -3, -4, -3, -2, -2, -2, -3,  2,  2,  4,  1,  0, -1, -2, -3, -1,
+	 0, -3, -2,  0, -3, -3, -2, -2, -2, -3, -3,  1,  3,  1,  4, -1, -1, -3, -2, -1,
+	-2, -3, -2, -2, -3, -3, -3, -3, -3, -3, -1,  0,  0,  0, -1,  6,  3,  1, -4, -2,
+	-2, -3, -2, -2, -2, -3, -2, -1, -2, -2,  2, -1, -1, -1, -1,  3,  7,  2, -3, -2,
+	-3, -2, -3, -2, -4, -4, -3, -2, -3, -3, -2, -1, -3, -2, -3,  1,  2, 11, -4, -2,
+	-1, -2, -1, -1, -2, -1, -1, -1, -1, -2, -2, -2, -3, -3, -2, -4, -3, -4,  7, -3,
+	 0, -3, -1, -1, -3, -3, -4, -3, -3, -3, -3, -1, -1, -1, -1, -2, -2, -2, -3,  9
+};
+
+
+
+
+/*Convert char to amino value*/
+int ToAcidCode(char input)
+{
+	 int ret;
+	 switch (input)
+		{
+		case 'A':
+			ret = Ala;
+			break;
+		case 'C':
+			ret = Cys;
+			break;
+		case 'D':
+			ret = Asp;
+			break;
+		case 'E':
+			ret = Glu;
+			break;
+		case 'G':
+			ret = Gly;
+			break;
+		case 'F':
+			ret = Phe;
+			break;
+		case 'H':
+			ret = His;
+			break;
+		case 'I':
+			ret = Ile;
+			break;
+		case 'K':
+			ret = Lys;
+			break;
+		case 'L':
+			ret = Leu;
+			break;
+		case 'M':
+			ret = Met;
+			break;
+		case 'N':
+			ret = Asn;
+			break;
+		case 'P':
+			ret = Pro;
+			break;
+		case 'Q':
+			ret = Gln;
+			break;
+		case 'R':
+			ret = Arg;
+			break;
+		case 'S':
+			ret = Ser;
+			break;
+		case 'T':
+			ret = Thr;
+			break;
+		case 'V':
+			ret = Val;
+			break;
+		case 'W':
+			ret = Trp;
+			break;
+		case 'Y':
+			ret = Tyr;
+			break;
+		default:
+			ret = UNKNOWN;
+			break;
+		}
+	return (ret);
+}
 
 
 
 /*Edit Distance core for size >= 2*/
 template<size_t N, typename T, typename TVALUE, typename V>
-unsigned int edit_distance_bpv(T &cmap, V const &vec, unsigned int const &tmax, unsigned int const &tlen) {
+unsigned int edit_distance_bpv(T &cmap, V const &vec, 
+unsigned int const &tmax, unsigned int const &tlen) {
     int D = tmax * 64 + tlen;
     TVALUE D0, HP, HN, VP = {0}, VN = {0};
     uint64_t top = (1L << (tlen - 1));  // 末尾のvectorに適用
@@ -127,12 +260,102 @@ unsigned int edit_distance_fixed_1_(T const &a, T const &b) {
 
 
 /*Edit Distance starter*/
-int start_edist(unsigned int (*func)(const std::string&, const std::string&), const std::string& arg1, const std::string& arg2, int num, const std::string& msg) {
+int start_edist(unsigned int (*func)(const std::string&, const std::string&),
+	const std::string& arg1, const std::string& arg2, int num, 
+	const std::string& msg)
+{
     //for (int i = 0; i < num - 1; i++) (*func)(arg1, arg2);
 	int reted = (*func)(arg1, arg2);
 
 	return reted;
 }
+
+
+
+int do_NW(std::string seq1, std::string seq2, int *mtx)
+{
+	std::vector<int> nw;
+	std::vector<char> ptr;
+	int val;
+	int max_i = 0;
+	int max_j = 0;
+
+	for (int i = 0; i < seq1.size () + 1; i++)
+	{
+		for (int j = 0; j < seq2.size () + 1; j++)
+		{
+			if (j == 0 || i == 0)
+			{
+				nw.push_back (gap_penalty * (i + j));
+							
+				if (i == 0 && j == 0)
+				{
+					ptr.push_back('X');
+				}
+				else if (i == 0)
+				{
+					ptr.push_back('-');
+				}
+				else
+				{
+					ptr.push_back('|');
+				}
+			}
+			else
+			{
+				int diag =
+					nw[(i - 1) * (seq2.size() + 1) + (j - 1)] +
+					mtx[ToAcidCode (seq1.c_str()[i - 1]) * NUM_OF_AA +
+					ToAcidCode (seq2.c_str()[j - 1])];
+				int up = nw[(i - 1) * (seq2.size() + 1) + (j)] + gap_penalty;
+			
+				if (ptr[(i - 1) * (seq2.size() + 1) + (j)] == 'X')
+				{
+					up += gap_open;
+				}
+
+				int left =
+					nw[(i) * (seq2.size() + 1) + (j - 1)] + gap_penalty;
+
+				if (ptr[(i) * (seq2.size() + 1) + (j - 1)] == 'X')
+				{
+					left += gap_open;
+				}
+				if (diag >= up)
+				{
+					if (diag >= left)
+					{
+						ptr.push_back('X');
+						val = diag;
+					}
+					else
+					{
+						ptr.push_back('-');
+						val = left;
+					}
+				}
+				else
+				{
+					if (up > left)
+					{
+						ptr.push_back('|');
+						val = up;
+					}
+					else
+					{
+						ptr.push_back('-');
+						val = left;
+					}
+				}
+				
+				nw.push_back(val);
+							
+			}
+		}
+	}
+
+	return nw.back();
+}	
 
 
 
@@ -257,5 +480,113 @@ double Bbfunc::executeEdist(std::string dataset_name)
 	delete decrypt_buf;
 
 	return (double)reted / (double)gv_size;
+
+}
+
+
+
+
+double Bbfunc::executeNWAlignment(std::string dataset_name)
+{
+	int sealedlen = -1;
+	char *name_to_pass;
+
+	name_to_pass = const_cast<char*>(dataset_name.c_str());
+
+	OCALL_get_sealed_length(name_to_pass, &sealedlen);
+
+	uint8_t *sealed_data = new uint8_t[sealedlen];
+
+	OCALL_load_db(sealed_data, sealedlen, name_to_pass);
+
+	/*start unsealing*/
+	sgx_status_t status;
+	uint32_t decrypt_buf_length;
+
+	decrypt_buf_length = sgx_get_encrypt_txt_len((sgx_sealed_data_t*)sealed_data);
+
+	uint8_t *decrypt_buf = new uint8_t[decrypt_buf_length];
+
+	status = sgx_unseal_data((sgx_sealed_data_t*)sealed_data, NULL, 0, 
+		decrypt_buf, &decrypt_buf_length);
+
+	if(status != SGX_SUCCESS)
+	{
+		throw std::string("Failed to unseal secret from database.");
+	}
+
+	double nw_ret = 0.0;
+	char *token_div;
+	
+	std::string seq_query, dummy_str;
+	std::vector<std::string> seq_vec;
+
+	/*parse FASTA format*/
+	token_div = strtok((char*)decrypt_buf, "\n");
+	
+	while((token_div = strtok(NULL, "\n")) != NULL)
+	{
+		if(token_div[0] == '>')
+		{
+			seq_vec.push_back(dummy_str);
+			dummy_str = "";
+		}
+		else
+		{
+			dummy_str += token_div;
+		}
+	}
+
+	int max_score = -9999, tmpmax;
+	int seqvec_size = seq_vec.size();
+	int str1_length = seq_vec[0].length();
+
+	
+	/*prepare internal arrays*/
+	int aa[NUM_OF_AA];
+	int mtx[NUM_OF_AA * NUM_OF_AA];
+	std::string tmp;
+	int cnt = 0;
+	
+	while(cnt < (NUM_OF_AA + 1) * NUM_OF_AA)
+	{
+		if(cnt < NUM_OF_AA)
+		{
+			aa[cnt] = ToAcidCode(blosumAminoArray[cnt]);
+		}
+		else
+		{
+			int i = (cnt - NUM_OF_AA) / NUM_OF_AA;
+			int j = (cnt - NUM_OF_AA) % NUM_OF_AA;
+			mtx[aa[i] * NUM_OF_AA + aa[j]] = blosumScoreArray[cnt];
+		}
+		cnt++;
+	}
+
+	int max_index;
+
+	for(int i = 1; i < seqvec_size; i++)
+	{
+		if(str1_length <= seq_vec[i].length())
+		{
+			tmpmax = do_NW(seq_vec[i], seq_vec[0], mtx);
+		}
+		else
+		{
+			tmpmax = do_NW(seq_vec[0], seq_vec[i], mtx);
+		}
+
+		if(tmpmax > max_score)
+		{
+			max_score = tmpmax;
+			max_index = i;
+		}
+	}
+
+	//OCALL_print(std::to_string(seqlen_avg / seqvec_size).c_str());
+	//OCALL_print(seq_vec[max_index].c_str());
+
+
+	return (double)max_score;
 
 }

@@ -558,7 +558,7 @@ void OCALL_load_db(uint8_t *sealed_data, int buflen, char *dataset_name)
 		sealedb64len, sealed_data, sealedb64len);
 }
 
-int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb, string datatype_str)
+int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb, string *datatype_str)
 {
 	int rv;
 	size_t sz;
@@ -746,7 +746,7 @@ int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb, 
 	string privilege_str(reinterpret_cast<char*>(privilege));
 	string dtstr_tmp(reinterpret_cast<char*>(datatype));
 
-	datatype_str = dtstr_tmp;
+	*datatype_str = dtstr_tmp;
 
 	bdb->setUsername(username_str);
 
@@ -1096,7 +1096,7 @@ int main (int argc, char *argv[])
 		string datatype = "";
 
 		cout << "RA completed. Receive login info from SP..." << endl;
-		int login_flag = receive_login_info(msgio, eid, &bdb, datatype);
+		int login_flag = receive_login_info(msgio, eid, &bdb, &datatype);
 		cout << "Receive secret data from SP... " << endl;
 		
 		int rv;

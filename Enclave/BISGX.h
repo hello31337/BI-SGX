@@ -75,8 +75,8 @@ enum TknKind
 	IntDivi = '\\',	Comma = ',',	DblQ = '"',
 	Func = 150,		Var,	If,		Elif,	Else,	For,	To,
 	Step,	While,	End,	Break,	Return,	Option,	Print,	Println,
-	Average,Edist,	Input,	Toint,	Exit,	Equal,	NotEq,	Less,
-	LessEq,	Great,  GreatEq,And,	Or,		END_KeyList,
+	Average,Edist,	Galign,	Input,	Toint,	Exit,	Equal,	NotEq,
+	Less,	LessEq,	Great,  GreatEq,And,	Or,		END_KeyList,
 	Ident,	IntNum,	DblNum,	String,	Letter,	Doll,	Digit,
 	Gvar,	Lvar,	Fcall,	EofProg,	EofLine,	Others,
 	Error
