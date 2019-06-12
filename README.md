@@ -91,6 +91,19 @@ There must be two tables within one database.
 One is table named `userinfo`, which is for management of login info. The format of `userinfo` is following:
 
 ```
++-----------+------+------+-----+---------+-------+
+| Field     | Type | Null | Key | Default | Extra |
++-----------+------+------+-----+---------+-------+
+| username  | text | YES  |     | NULL    |       |
+| pass_hash | text | YES  |     | NULL    |       |
+| privilege | text | YES  |     | NULL    |       |
++-----------+------+------+-----+---------+-------+
+```
+
+
+And another is named `stored_data`, which is for storing secret data. The format of `stored_data` is following: 
+
+```
 +-----------+----------+------+-----+---------+-------+
 | Field     | Type     | Null | Key | Default | Extra |
 +-----------+----------+------+-----+---------+-------+
@@ -102,17 +115,6 @@ One is table named `userinfo`, which is for management of login info. The format
 +-----------+----------+------+-----+---------+-------+
 ```
 
-And another is named `stored_data`, which is for storing secret data. The format of `stored_data` is following: 
-
-```
-+-----------+------+------+-----+---------+-------+
-| Field     | Type | Null | Key | Default | Extra |
-+-----------+------+------+-----+---------+-------+
-| username  | text | YES  |     | NULL    |       |
-| pass_hash | text | YES  |     | NULL    |       |
-| privilege | text | YES  |     | NULL    |       |
-+-----------+------+------+-----+---------+-------+
-```
 
 So ISV have to create above tables as aforementioned formats before start BI-SGX.
 
@@ -124,7 +126,7 @@ user = "BI-SGX";
 password = "bisgx_sample";
 database = "`BI-SGX`";
 ```
-But hardcoded login context is extremely insecure, so you should edit `void BISGX_Database::initDB()` in `client.cpp` to manually enter login context using like `cout`. More secure login method will be impremented in the future.
+But hardcoded login context is extremely insecure, so you should edit `void BISGX_Database::initDB()` in `isv.cpp` to manually enter login context using like `cout`. More secure login method will be impremented in the future.
 
 ### Start programs
 You can run ISV (SGX server) code by entering command:
