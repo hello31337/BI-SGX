@@ -77,6 +77,11 @@ namespace Bbfunc
 	extern double executeNWAlignment(std::string dataset_name);
 }
 
+namespace Bmath
+{
+	extern double calculateExp(double base, double exponent);
+}
+
 void Bcode::syntaxChk()
 {
 	syntaxChk_mode = true;
@@ -532,6 +537,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 				break;
 
 			case Toint: case Input: case Average: case Edist: case Galign:
+			case Exp:
 				sysFncExec_syntax(kd);
 
 				break;
@@ -587,6 +593,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 			break;
 
 		case Toint: case Input: case Average: case Edist: case Galign:
+		case Exp:
 			sysFncExec(kd);
 
 			break;
@@ -875,6 +882,17 @@ void Bcode::sysFncExec_syntax(TknKind kd)
 
 			break;
 
+		case Exp:
+			code = nextCode();
+			code = chk_nextCode(code, '(');
+			(void)get_expression();
+			code = chk_nextCode(code, ',');
+			(void)get_expression();
+			code = chk_nextCode(code, ')');
+			stk.push(1.0);
+			
+			break;
+	
 		case Print: case Println:
 			do
 			{
@@ -949,6 +967,28 @@ void Bcode::sysFncExec(TknKind kd)
 			stk.push(temp);
 
 			code = nextCode(); // Need to skip RParen
+
+			break;
+		}
+
+		case Exp:
+		{
+			double base, exponent, temp;
+
+			code = nextCode(); //LParen
+			code = nextCode(); //base
+
+			base = code.dblVal; //obtain base
+
+			code = nextCode(); //Comma
+			code = nextCode(); //exponent
+
+			exponent = code.dblVal; //obtain exponent
+
+			temp = Bmath::calculateExp(base, exponent);
+			stk.push(temp);
+
+			code = nextCode(); //Need to skip RParen
 
 			break;
 		}

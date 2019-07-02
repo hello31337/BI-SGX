@@ -77,7 +77,7 @@ CLEANFILES+= $(ENCLAVE)_t.c $(ENCLAVE)_t.h
 
 Enclave_SOURCES = Enclave_t.c Enclave_t.h Enclave.cpp BISGX_lex.cpp \
 	BISGX_parse.cpp BISGX_code.cpp BISGX_main.cpp BISGX_table.cpp \
-	BISGX_misc.cpp \
+	BISGX_misc.cpp BISGX_bfunc.cpp BISGX_math.cpp \
 	$(ENCLAVE_KEY) $(ENCLAVE_CONFIG)
 
 

@@ -54,7 +54,7 @@ namespace Blex
 		{"option"	, Option}, {"input"		, Input	 },
 		{"toint"	, Toint	}, {"average"	, Average},
 		{"edist"	, Edist }, {"galign"	, Galign },
-		{"exit"		, Exit	 },
+		{"exp"		, Exp	}, {"exit"		, Exit	 },
 		{"("	, Lparen	}, {")"		, Rparen	},
 		{"["	, Lbracket	}, {"]"		, Rbracket	},
 		{"+"	, Plus		}, {"-"		, Minus		},
