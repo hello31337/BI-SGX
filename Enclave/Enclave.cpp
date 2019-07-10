@@ -341,14 +341,21 @@ sgx_status_t process_login_info(sgx_ra_context_t context, uint8_t* login_info_ci
 	uint8_t login_info[64] = {'\0'};
 	
 	sgx_aes_gcm_128bit_tag_t tag_t;
+	uint8_t *iv_t = new uint8_t[p_iv_len];
 
 	for(int i = 0; i < 16; i++)
 	{
 		tag_t[i] = tag[i];
 	}
 
+	for(int i = 0; i < p_iv_len; i++)
+	{
+		iv_t[i] = p_iv[i];
+	}
+
+
 	status = sgx_rijndael128GCM_decrypt(&sk_key, (uint8_t *)login_info_cipher, cipherlen,
-		login_info, p_iv, p_iv_len, NULL, 0, &tag_t);
+		login_info, iv_t, p_iv_len, NULL, 0, &tag_t);
 
 
 	if(status != SGX_SUCCESS)
@@ -593,11 +600,10 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_ciphe
 		OCALL_print_status(status);
 		return status;
 	}
-	
+
 	uint32_t p_iv_len = 12;
 	uint8_t intp_code[1000000] = {'\0'};
 
-	
 	sgx_aes_gcm_128bit_tag_t tag_t;
 
 	for(int i = 0; i < 16; i++)

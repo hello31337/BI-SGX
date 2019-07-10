@@ -41,7 +41,8 @@ fi
 # Parse our settings file
 #----------------------------------------------------------------------------
 
-source settings
+. ./settings
+. ./policy
 
 # Optional settings
 
@@ -77,18 +78,19 @@ if [ "$IAS_CLIENT_CERT_TYPE" != "" ]; then
 	sp_cert_type="--ias-cert-type=$IAS_CLIENT_CERT_TYPE"
 fi
 
-if [ "$IAS_PROXY_URL" != "" ]; then
-	sp_proxy="--proxy=$IAS_PROXY_URL"
-fi
-
 if [ "$IAS_DISABLE_PROXY" != "" -a "0$IAS_DISABLE_PROXY" -ne 0 ]; then
 	sp_noproxy="-x"
+elif [ "$IAS_PROXY_URL" != "" ]; then
+	sp_proxy="--proxy=$IAS_PROXY_URL"
 fi
 
 if [ "$POLICY_STRICT_TRUST" != "" -a "0$POLICY_STRICT_TRUST" -ne 0 ]; then
 	sp_strict_trust="-X"
 fi
 
+if [ "$ALLOW_DEBUG_ENCLAVE" != "" -a "0$ALLOW_DEBUG_ENCLAVE" -eq 0 ]; then
+	flag_no_debug_enclave=-D
+fi
 
 # Debugging options
 
@@ -105,40 +107,27 @@ fi
 # Execute
 #----------------------------------------------------------------------------
 
-if [ "$PROG" = "run-client" ]
+if [ "$PROG" = "run-isv" ]
 then
 	./client \
 		-s $SPID \
 		$cl_nonce $cl_pse \
 		$flag_linkable $flag_debug $flag_verbose \
 		"$@"
-elif [ "$PROG" = "run-isv" ]
-then
-	./client \
-		-s $SPID \
-		$cl_nonce $cl_pse \
-		$flag_linkable $flag_debug $flag_verbose \
-		"$@"
-elif [ "$PROG" = "run-server" ]
-then
-	./sp \
-		-s $SPID \
-		-A "$IAS_REPORT_SIGNING_CA_FILE" \
-		-C "$IAS_CLIENT_CERT_FILE" \
-		$sp_cert_key $sp_noproxy $sp_proxy $sp_cert_passwd $sp_cert_type \
-		$flag_linkable $sp_strict_trust $flag_debug $flag_verbose \
-                $sp_production \
-		"$@" 
 elif [ "$PROG" = "run-sp" ]
 then
 	./sp \
 		-s $SPID \
+		-i $IAS_PRIMARY_SUBSCRIPTION_KEY \
+		-j $IAS_SECONDARY_SUBSCRIPTION_KEY \
 		-A "$IAS_REPORT_SIGNING_CA_FILE" \
-		-C "$IAS_CLIENT_CERT_FILE" \
-		$sp_cert_key $sp_noproxy $sp_proxy $sp_cert_passwd $sp_cert_type \
+		-N $MRSIGNER \
+		-V $MIN_ISVSVN \
+		-R $PRODID \
+		$sp_noproxy $sp_proxy  \
 		$flag_linkable $sp_strict_trust $flag_debug $flag_verbose \
-                $sp_production \
-		"$@"
+                $sp_production $flag_no_debug_enclave \
+		"$@" 
 else
 	echo "$PROG: unrecognized instance (expected run-client or run-server)" >&2
 	exit 1

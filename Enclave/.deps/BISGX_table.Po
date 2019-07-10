@@ -1,0 +1,224 @@
+BISGX_table.o: BISGX_table.cpp Enclave_t.h \
+ /opt/intel/sgxsdk/include/tlibc/stdint.h \
+ /opt/intel/sgxsdk/include/tlibc/sys/stdint.h \
+ /opt/intel/sgxsdk/include/tlibc/sys/cdefs.h \
+ /opt/intel/sgxsdk/include/tlibc/sys/_types.h \
+ /opt/intel/sgxsdk/include/tlibc/wchar.h \
+ /opt/intel/sgxsdk/include/tlibc/stddef.h \
+ /opt/intel/sgxsdk/include/sgx_edger8r.h \
+ /opt/intel/sgxsdk/include/sgx_defs.h \
+ /opt/intel/sgxsdk/include/sgx_error.h \
+ /opt/intel/sgxsdk/include/sgx_eid.h /opt/intel/sgxsdk/include/sgx_trts.h \
+ /opt/intel/sgxsdk/include/sgx_utils.h /opt/intel/sgxsdk/include/sgx.h \
+ /opt/intel/sgxsdk/include/sgx_attributes.h \
+ /opt/intel/sgxsdk/include/sgx_key.h \
+ /opt/intel/sgxsdk/include/sgx_report.h \
+ /opt/intel/sgxsdk/include/sgx_tkey_exchange.h \
+ /opt/intel/sgxsdk/include/sgx_key_exchange.h \
+ /opt/intel/sgxsdk/include/sgx_quote.h \
+ /opt/intel/sgxsdk/include/sgx_ecp_types.h \
+ /opt/intel/sgxsdk/include/sgx_tcrypto.h \
+ /opt/intel/sgxsdk/include/tlibc/stdlib.h \
+ /opt/intel/sgxsdk/include/sgx_tae_service.h ../config.h BISGX.h \
+ /opt/intel/sgxsdk/include/libcxx/vector \
+ /opt/intel/sgxsdk/include/libcxx/__config \
+ /opt/intel/sgxsdk/include/libcxx/__sgx \
+ /opt/intel/sgxsdk/include/tlibc/sys/endian.h \
+ /opt/intel/sgxsdk/include/tlibc/assert.h \
+ /opt/intel/sgxsdk/include/libcxx/iosfwd \
+ /opt/intel/sgxsdk/include/libcxx/__bit_reference \
+ /opt/intel/sgxsdk/include/libcxx/algorithm \
+ /opt/intel/sgxsdk/include/libcxx/initializer_list \
+ /opt/intel/sgxsdk/include/libcxx/cstddef \
+ /opt/intel/sgxsdk/include/libcxx/type_traits \
+ /opt/intel/sgxsdk/include/libcxx/cstring \
+ /opt/intel/sgxsdk/include/tlibc/string.h \
+ /opt/intel/sgxsdk/include/libcxx/utility \
+ /opt/intel/sgxsdk/include/libcxx/__tuple \
+ /opt/intel/sgxsdk/include/libcxx/memory \
+ /opt/intel/sgxsdk/include/libcxx/typeinfo \
+ /opt/intel/sgxsdk/include/libcxx/exception \
+ /opt/intel/sgxsdk/include/tlibc/../stdc++/exception \
+ /opt/intel/sgxsdk/include/sgx_defs.h \
+ /opt/intel/sgxsdk/include/stdc++/linux/exception \
+ /opt/intel/sgxsdk/include/libcxx/cstdint \
+ /opt/intel/sgxsdk/include/libcxx/new \
+ /opt/intel/sgxsdk/include/tlibc/../stdc++/new \
+ /opt/intel/sgxsdk/include/libcxx/__undef___deallocate \
+ /opt/intel/sgxsdk/include/libcxx/limits \
+ /opt/intel/sgxsdk/include/libcxx/__undef_min_max \
+ /opt/intel/sgxsdk/include/libcxx/iterator \
+ /opt/intel/sgxsdk/include/libcxx/__functional_base \
+ /opt/intel/sgxsdk/include/libcxx/__debug \
+ /opt/intel/sgxsdk/include/libcxx/tuple \
+ /opt/intel/sgxsdk/include/libcxx/stdexcept \
+ /opt/intel/sgxsdk/include/libcxx/atomic \
+ /opt/intel/sgxsdk/include/sgx_spinlock.h \
+ /opt/intel/sgxsdk/include/libcxx/cstdlib \
+ /opt/intel/sgxsdk/include/libcxx/climits \
+ /opt/intel/sgxsdk/include/tlibc/limits.h \
+ /opt/intel/sgxsdk/include/tlibc/sys/limits.h \
+ /opt/intel/sgxsdk/include/libcxx/__split_buffer \
+ /opt/intel/sgxsdk/include/libcxx/stack \
+ /opt/intel/sgxsdk/include/libcxx/deque \
+ /opt/intel/sgxsdk/include/libcxx/string \
+ /opt/intel/sgxsdk/include/libcxx/cstdio \
+ /opt/intel/sgxsdk/include/tlibc/stdio.h \
+ /opt/intel/sgxsdk/include/tlibc/stdarg.h \
+ /opt/intel/sgxsdk/include/libcxx/cwchar \
+ /opt/intel/sgxsdk/include/libcxx/cwctype \
+ /opt/intel/sgxsdk/include/libcxx/cctype \
+ /opt/intel/sgxsdk/include/tlibc/ctype.h \
+ /opt/intel/sgxsdk/include/tlibc/wctype.h
+
+Enclave_t.h:
+
+/opt/intel/sgxsdk/include/tlibc/stdint.h:
+
+/opt/intel/sgxsdk/include/tlibc/sys/stdint.h:
+
+/opt/intel/sgxsdk/include/tlibc/sys/cdefs.h:
+
+/opt/intel/sgxsdk/include/tlibc/sys/_types.h:
+
+/opt/intel/sgxsdk/include/tlibc/wchar.h:
+
+/opt/intel/sgxsdk/include/tlibc/stddef.h:
+
+/opt/intel/sgxsdk/include/sgx_edger8r.h:
+
+/opt/intel/sgxsdk/include/sgx_defs.h:
+
+/opt/intel/sgxsdk/include/sgx_error.h:
+
+/opt/intel/sgxsdk/include/sgx_eid.h:
+
+/opt/intel/sgxsdk/include/sgx_trts.h:
+
+/opt/intel/sgxsdk/include/sgx_utils.h:
+
+/opt/intel/sgxsdk/include/sgx.h:
+
+/opt/intel/sgxsdk/include/sgx_attributes.h:
+
+/opt/intel/sgxsdk/include/sgx_key.h:
+
+/opt/intel/sgxsdk/include/sgx_report.h:
+
+/opt/intel/sgxsdk/include/sgx_tkey_exchange.h:
+
+/opt/intel/sgxsdk/include/sgx_key_exchange.h:
+
+/opt/intel/sgxsdk/include/sgx_quote.h:
+
+/opt/intel/sgxsdk/include/sgx_ecp_types.h:
+
+/opt/intel/sgxsdk/include/sgx_tcrypto.h:
+
+/opt/intel/sgxsdk/include/tlibc/stdlib.h:
+
+/opt/intel/sgxsdk/include/sgx_tae_service.h:
+
+../config.h:
+
+BISGX.h:
+
+/opt/intel/sgxsdk/include/libcxx/vector:
+
+/opt/intel/sgxsdk/include/libcxx/__config:
+
+/opt/intel/sgxsdk/include/libcxx/__sgx:
+
+/opt/intel/sgxsdk/include/tlibc/sys/endian.h:
+
+/opt/intel/sgxsdk/include/tlibc/assert.h:
+
+/opt/intel/sgxsdk/include/libcxx/iosfwd:
+
+/opt/intel/sgxsdk/include/libcxx/__bit_reference:
+
+/opt/intel/sgxsdk/include/libcxx/algorithm:
+
+/opt/intel/sgxsdk/include/libcxx/initializer_list:
+
+/opt/intel/sgxsdk/include/libcxx/cstddef:
+
+/opt/intel/sgxsdk/include/libcxx/type_traits:
+
+/opt/intel/sgxsdk/include/libcxx/cstring:
+
+/opt/intel/sgxsdk/include/tlibc/string.h:
+
+/opt/intel/sgxsdk/include/libcxx/utility:
+
+/opt/intel/sgxsdk/include/libcxx/__tuple:
+
+/opt/intel/sgxsdk/include/libcxx/memory:
+
+/opt/intel/sgxsdk/include/libcxx/typeinfo:
+
+/opt/intel/sgxsdk/include/libcxx/exception:
+
+/opt/intel/sgxsdk/include/tlibc/../stdc++/exception:
+
+/opt/intel/sgxsdk/include/sgx_defs.h:
+
+/opt/intel/sgxsdk/include/stdc++/linux/exception:
+
+/opt/intel/sgxsdk/include/libcxx/cstdint:
+
+/opt/intel/sgxsdk/include/libcxx/new:
+
+/opt/intel/sgxsdk/include/tlibc/../stdc++/new:
+
+/opt/intel/sgxsdk/include/libcxx/__undef___deallocate:
+
+/opt/intel/sgxsdk/include/libcxx/limits:
+
+/opt/intel/sgxsdk/include/libcxx/__undef_min_max:
+
+/opt/intel/sgxsdk/include/libcxx/iterator:
+
+/opt/intel/sgxsdk/include/libcxx/__functional_base:
+
+/opt/intel/sgxsdk/include/libcxx/__debug:
+
+/opt/intel/sgxsdk/include/libcxx/tuple:
+
+/opt/intel/sgxsdk/include/libcxx/stdexcept:
+
+/opt/intel/sgxsdk/include/libcxx/atomic:
+
+/opt/intel/sgxsdk/include/sgx_spinlock.h:
+
+/opt/intel/sgxsdk/include/libcxx/cstdlib:
+
+/opt/intel/sgxsdk/include/libcxx/climits:
+
+/opt/intel/sgxsdk/include/tlibc/limits.h:
+
+/opt/intel/sgxsdk/include/tlibc/sys/limits.h:
+
+/opt/intel/sgxsdk/include/libcxx/__split_buffer:
+
+/opt/intel/sgxsdk/include/libcxx/stack:
+
+/opt/intel/sgxsdk/include/libcxx/deque:
+
+/opt/intel/sgxsdk/include/libcxx/string:
+
+/opt/intel/sgxsdk/include/libcxx/cstdio:
+
+/opt/intel/sgxsdk/include/tlibc/stdio.h:
+
+/opt/intel/sgxsdk/include/tlibc/stdarg.h:
+
+/opt/intel/sgxsdk/include/libcxx/cwchar:
+
+/opt/intel/sgxsdk/include/libcxx/cwctype:
+
+/opt/intel/sgxsdk/include/libcxx/cctype:
+
+/opt/intel/sgxsdk/include/tlibc/ctype.h:
+
+/opt/intel/sgxsdk/include/tlibc/wctype.h:

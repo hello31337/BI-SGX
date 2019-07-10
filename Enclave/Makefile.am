@@ -65,6 +65,11 @@ ENCLAVE_KEY=$(ENCLAVE)_private.pem
 AM_CPPFLAGS += -I$(SGXSDK_INCDIR)/libcxx
 AM_CPPFLAGS += -I..
 
+## Override LIBS coming from the app configuration, as they don't
+## apply to the enclave.
+
+LIBS=
+
 ## Additional files to remove with 'make clean'. This list needs
 ## to include your edger8r genreated files.
 
@@ -75,9 +80,9 @@ CLEANFILES+= $(ENCLAVE)_t.c $(ENCLAVE)_t.h
 ## files. You can't use the $(ENCLAVE) variable in the build
 ## target name (i.e., $(ENCLAVE)_SOURCES will not work).
 
-Enclave_SOURCES = Enclave_t.c Enclave_t.h Enclave.cpp BISGX_lex.cpp \
-	BISGX_parse.cpp BISGX_code.cpp BISGX_main.cpp BISGX_table.cpp \
-	BISGX_misc.cpp BISGX_bfunc.cpp BISGX_math.cpp \
+Enclave_SOURCES = Enclave_t.c Enclave_t.h Enclave.cpp \
+	BISGX_lex.cpp BISGX_parse.cpp BISGX_code.cpp BISGX_main.cpp \
+	BISGX_table.cpp BISGX_misc.cpp BISGX_bfunc.cpp BISGX_math.cpp \
 	$(ENCLAVE_KEY) $(ENCLAVE_CONFIG)
 
 

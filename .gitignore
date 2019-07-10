@@ -1,3 +1,4 @@
+settings.bak
 sp.log
 client.log
 install-sh
@@ -6,7 +7,20 @@ depcomp
 missing
 ref_sp
 public
-settings.*
+genome*
+FASTA*
+dataset*
+interpreter/
 win32/agent_win32.cpp
 win32/agent_win32.h
 backup/
+memo.md
+todo.txt
+*.o
+result.dat
+sample*.dat
+login*.ini
+objdump*
+rng_python/
+sigstruct.dat
+sp.cpp.bak*

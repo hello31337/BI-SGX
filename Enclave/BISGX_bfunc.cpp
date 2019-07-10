@@ -583,6 +583,7 @@ double Bbfunc::executeNWAlignment(std::string dataset_name)
 		}
 	}
 
+	//
 	//OCALL_print(std::to_string(seqlen_avg / seqvec_size).c_str());
 	//OCALL_print(seq_vec[max_index].c_str());
 

@@ -125,7 +125,7 @@ char debug= 0;
 char verbose= 0;
 MsgIO *msgio = NULL;
 
-sgx_ra_context_t g_ra_ctx = 0xdeaddead;
+sgx_ra_context_t g_ra_ctx = 0xDEADDEAD;
 sgx_status_t g_sgxrv = SGX_SUCCESS;
 
 chrono::system_clock::time_point chrono_start, chrono_end;
@@ -728,6 +728,9 @@ int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb, 
 	uint8_t privilege[2] = {'\0'};
 	uint8_t datatype[8] = {'\0'};
 
+	cout << "Check cipher_to_enclave before pass: " << endl;
+	OCALL_dump(cipher_to_enclave, cipherlen);
+
 	sgx_status_t login_status = process_login_info(eid, &retval, g_ra_ctx, 
 		cipher_to_enclave, (size_t)deflen, iv_to_enclave, tag_to_enclave, 
 		result_cipher, &result_len, username, password_hash, privilege,
@@ -780,7 +783,7 @@ int main (int argc, char *argv[])
 	EVP_PKEY *service_public_key= NULL;
 	char have_spid= 0;
 	char flag_stdio= 0;
-	
+
 	try
 	{
 		bdb.initDB();
@@ -802,10 +805,15 @@ int main (int argc, char *argv[])
 	dividerWithText(fplog, "Client Log Timestamp");
 
 	const time_t timeT = time(NULL);
-	struct tm lt;
+	struct tm lt, *ltp;
 
 #ifndef _WIN32
-	lt = *localtime(&timeT);
+	ltp = localtime(&timeT);
+	if ( ltp == NULL ) {
+		perror("localtime");
+		return 1;
+	}
+	lt= *ltp;
 #else
 
 	localtime_s(&lt, &timeT);
@@ -871,7 +879,7 @@ int main (int argc, char *argv[])
 		case 'P':
 			if ( ! key_load_file(&service_public_key, optarg, KEY_PUBLIC) ) {
 				fprintf(stderr, "%s: ", optarg);
-				crypto_perror("load_key_from_file");
+				crypto_perror("key_load_file");
 				exit(1);
 			} 
 
@@ -1059,14 +1067,19 @@ int main (int argc, char *argv[])
 	}
 #endif
 
-	if ( config.server == NULL ) {
+	if(config.server == NULL)
+	{
 		msgio = new MsgIO();
-	} else {
-		try {
+	}
+	else
+	{
+		try
+		{
 			msgio = new MsgIO(NULL, (config.port == NULL) ?
 				DEFAULT_PORT : config.port);
 		}
-		catch(...) {
+		catch(...)
+		{
 			exit(1);
 		}
 	}
@@ -1077,21 +1090,15 @@ int main (int argc, char *argv[])
 
 	while(msgio->server_loop())
 	{
-		if(isRAed == false)
-		{
-			isRAed = true;
-			if ( config.mode == MODE_ATTEST )
-			{
-				OCALL_chrono_start();
-				do_attestation(eid, &config);
-				OCALL_chrono_end();
-			} else if ( config.mode == MODE_EPID || config.mode == MODE_QUOTE ) {
-				do_quote(eid, &config);
-			} else {
-				fprintf(stderr, "Unknown operation mode.\n");
-				return 1;
-			}
+		if ( config.mode == MODE_ATTEST ) {
+			do_attestation(eid, &config);
+		} else if ( config.mode == MODE_EPID || config.mode == MODE_QUOTE ) {
+			do_quote(eid, &config);
+		} else {
+			fprintf(stderr, "Unknown operation mode.\n");
+			return 1;
 		}
+	
 
 		string datatype = "";
 
@@ -1427,6 +1434,8 @@ int main (int argc, char *argv[])
 	enclave_ra_close(eid, &g_sgxrv, g_ra_ctx);
      
 	close_logfile(fplog);
+
+	return 0;
 }
 
 int do_attestation (sgx_enclave_id_t eid, config_t *config)
@@ -1484,6 +1493,7 @@ int do_attestation (sgx_enclave_id_t eid, config_t *config)
 	/* Did the ECALL succeed? */
 	if ( status != SGX_SUCCESS ) {
 		fprintf(stderr, "enclave_ra_init: %08x\n", status);
+		delete msgio;
 		return 1;
 	}
 
@@ -1491,6 +1501,7 @@ int do_attestation (sgx_enclave_id_t eid, config_t *config)
 	if (b_pse) {
 		if ( pse_status != SGX_SUCCESS ) {
 			fprintf(stderr, "pse_session: %08x\n", sgxrv);
+			delete msgio;
 			return 1;
 		}
 	}
@@ -1498,6 +1509,7 @@ int do_attestation (sgx_enclave_id_t eid, config_t *config)
 	/* Did sgx_ra_init() succeed? */
 	if ( sgxrv != SGX_SUCCESS ) {
 		fprintf(stderr, "sgx_ra_init: %08x\n", sgxrv);
+		delete msgio;
 		return 1;
 	}
 
@@ -1505,8 +1517,9 @@ int do_attestation (sgx_enclave_id_t eid, config_t *config)
 
 	status = sgx_get_extended_epid_group_id(&msg0_extended_epid_group_id);
 	if ( status != SGX_SUCCESS ) {
-                enclave_ra_close(eid, &sgxrv, ra_ctx); 
+		enclave_ra_close(eid, &sgxrv, ra_ctx); 
 		fprintf(stderr, "sgx_get_extended_epid_group_id: %08x\n", status);
+		delete msgio;
 		return 1;
 	}
 	if ( verbose ) {
@@ -1528,9 +1541,10 @@ int do_attestation (sgx_enclave_id_t eid, config_t *config)
 
 	status= sgx_ra_get_msg1(ra_ctx, eid, sgx_ra_get_ga, &msg1);
 	if ( status != SGX_SUCCESS ) {
-                enclave_ra_close(eid, &sgxrv, ra_ctx);
+		enclave_ra_close(eid, &sgxrv, ra_ctx);
 		fprintf(stderr, "sgx_ra_get_msg1: %08x\n", status);
 		fprintf(fplog, "sgx_ra_get_msg1: %08x\n", status);
+		delete msgio;
 		return 1;
 	}
 
@@ -1589,12 +1603,14 @@ int do_attestation (sgx_enclave_id_t eid, config_t *config)
 
 	rv= msgio->read((void **) &msg2, NULL);
 	if ( rv == 0 ) {
-                enclave_ra_close(eid, &sgxrv, ra_ctx);
+		enclave_ra_close(eid, &sgxrv, ra_ctx);
 		fprintf(stderr, "protocol error reading msg2\n");
+		delete msgio;
 		exit(1);
 	} else if ( rv == -1 ) {
-                enclave_ra_close(eid, &sgxrv, ra_ctx);
+		enclave_ra_close(eid, &sgxrv, ra_ctx);
 		fprintf(stderr, "system error occurred while reading msg2\n");
+		delete msgio;
 		exit(1);
 	}
 
@@ -1660,16 +1676,14 @@ int do_attestation (sgx_enclave_id_t eid, config_t *config)
 		sizeof(sgx_ra_msg2_t) + msg2->sig_rl_size,
 	    &msg3, &msg3_sz);
 
-	if ( msg2 ) {
-		free(msg2);
-		msg2 = NULL;
-	}
+	free(msg2);
 
 	if ( status != SGX_SUCCESS ) {
-                enclave_ra_close(eid, &sgxrv, ra_ctx);
+		enclave_ra_close(eid, &sgxrv, ra_ctx);
 		fprintf(stderr, "sgx_ra_proc_msg2: %08x\n", status);
 		fprintf(fplog, "sgx_ra_proc_msg2: %08x\n", status);
 
+		delete msgio;
 		return 1;
 	} 
 
@@ -1726,7 +1740,18 @@ int do_attestation (sgx_enclave_id_t eid, config_t *config)
  
 	/* Read Msg4 provided by Service Provider, then process */
         
-	msgio->read((void **)&msg4, &msg4sz);
+	rv= msgio->read((void **)&msg4, &msg4sz);
+	if ( rv == 0 ) {
+		enclave_ra_close(eid, &sgxrv, ra_ctx);
+		fprintf(stderr, "protocol error reading msg4\n");
+		delete msgio;
+		exit(1);
+	} else if ( rv == -1 ) {
+		enclave_ra_close(eid, &sgxrv, ra_ctx);
+		fprintf(stderr, "system error occurred while reading msg4\n");
+		delete msgio;
+		exit(1);
+	}
 
 	edividerWithText("Enclave Trust Status from Service Provider");
 
@@ -1806,8 +1831,7 @@ int do_attestation (sgx_enclave_id_t eid, config_t *config)
 	 * provider.
 	 */
 
-	//if ( enclaveTrusted == Trusted ) {
-	if (true){
+	if ( enclaveTrusted == Trusted ) {
 		sgx_status_t key_status, sha_status;
 		sgx_sha256_hash_t mkhash, skhash;
 
@@ -1841,15 +1865,13 @@ int do_attestation (sgx_enclave_id_t eid, config_t *config)
 		}
 	}
 
-	if ( msg4 ) {
-		free (msg4);
-		msg4 = NULL;
-	}
-		g_ra_ctx = ra_ctx;
-		g_sgxrv = sgxrv;
+	free (msg4);
 
-        //enclave_ra_close(eid, &sgxrv, ra_ctx);
-   
+	g_ra_ctx = ra_ctx;
+	g_sgxrv = sgxrv;
+	//enclave_ra_close(eid, &sgxrv, ra_ctx);
+	//delete msgio;
+
 	return 0;
 }
 
@@ -2007,6 +2029,10 @@ int do_quote(sgx_enclave_id_t eid, config_t *config)
 	}
 
 	b64quote = (LPTSTR)(malloc(sz_b64quote));
+	if (b64quote == NULL) {
+		perror("malloc");
+		return 1;
+	}
 	if (CryptBinaryToString((BYTE *) quote, sz, CRYPT_STRING_BASE64|CRYPT_STRING_NOCRLF, b64quote, &sz_b64quote) == FALSE) {
 		fprintf(stderr, "CryptBinaryToString: could not get Base64 encoded quote length\n");
 		return 1;
@@ -2019,6 +2045,12 @@ int do_quote(sgx_enclave_id_t eid, config_t *config)
 		}
 
 		b64manifest = (LPTSTR)(malloc(sz_b64manifest));
+		if (b64manifest == NULL) {
+			free(b64quote);
+			perror("malloc");
+			return 1;
+		}
+
 		if (CryptBinaryToString((BYTE *)pse_manifest, (uint32_t)(pse_manifest_sz), CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, b64manifest, &sz_b64manifest) == FALSE) {
 			fprintf(stderr, "CryptBinaryToString: could not get Base64 encoded manifest length\n");
 			return 1;
@@ -2027,9 +2059,18 @@ int do_quote(sgx_enclave_id_t eid, config_t *config)
 
 #else
 	b64quote= base64_encode((char *) quote, sz);
+	if ( b64quote == NULL ) {
+		eprintf("Could not base64 encode quote\n");
+		return 1;
+	}
 
 	if (OPT_ISSET(flags, OPT_PSE)) {
 		b64manifest= base64_encode((char *) pse_manifest, pse_manifest_sz);
+		if ( b64manifest == NULL ) {
+			free(b64quote);
+			eprintf("Could not base64 encode manifest\n");
+			return 1;
+		}
 	}
 #endif
 
@@ -2049,6 +2090,9 @@ int do_quote(sgx_enclave_id_t eid, config_t *config)
 #ifdef SGX_HW_SIM
 	fprintf(stderr, "WARNING! Built in h/w simulation mode. This quote will not be verifiable.\n");
 #endif
+
+	free(b64quote);
+	if ( b64manifest != NULL ) free(b64manifest);
 
 	return 0;
 
@@ -2121,8 +2165,9 @@ int file_in_searchpath (const char *file, const char *search, char *fullpath,
 
 		if ( lp ) {
 
-			strncpy(fullpath, p, len);
-			rem= len-lp-1;
+			strncpy(fullpath, p, len-1);
+			rem= (len-1)-lp-1;
+			fullpath[len-1]= 0;
 
 			strncat(fullpath, "/", rem);
 			--rem;

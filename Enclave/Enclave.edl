@@ -58,7 +58,7 @@ enclave {
 			[out]size_t *res_len);
 
 		public sgx_status_t process_login_info(sgx_ra_context_t context,
-			[user_check]uint8_t *login_info_cipher, size_t cipherlen,
+			[in, size=cipherlen]uint8_t *login_info_cipher, size_t cipherlen,
 			[in, out, size=12]uint8_t *p_iv, [in, out, size=16]uint8_t *tag,
 			[in, out, size=1024]uint8_t *result_cipher, [out]size_t *res_len,
 			[in, out, size=32]uint8_t *username,
