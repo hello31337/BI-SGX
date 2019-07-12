@@ -54,7 +54,8 @@ namespace Blex
 		{"option"	, Option}, {"input"		, Input	 },
 		{"toint"	, Toint	}, {"average"	, Average},
 		{"edist"	, Edist }, {"galign"	, Galign },
-		{"exp"		, Exp	}, {"exit"		, Exit	 },
+		{"exp"		, Exp	}, {"inquiryDB" , InquiryDB},
+		{"exit"		, Exit	 },
 		{"("	, Lparen	}, {")"		, Rparen	},
 		{"["	, Lbracket	}, {"]"		, Rbracket	},
 		{"+"	, Plus		}, {"-"		, Minus		},
@@ -207,6 +208,7 @@ Token Blex::nextTkn()
 				txt += CH;
 				NEXT_CH();
 			}
+
 			break;
 
 		case Digit:

@@ -200,6 +200,13 @@ void Bparse::convert()
 
 			break;
 
+		case InquiryDB:
+			setCode(token.kind);
+			token = Blex::nextTkn();
+			convert_rest();
+
+			break;
+
 		case End:
 			throw std::string("Illegal end sentence.");
 			break;
@@ -251,7 +258,7 @@ void Bparse::convert_rest()
 		{
 			case If: case Elif: case Else: case For: case While: case Break:
 			case Func: case Return: case Exit: case Print: case Println:
-			case Option: case Var: case End:
+			case InquiryDB: case Option: case Var: case End:
 				throw std::string("Illegal Description.");
 				break;
 

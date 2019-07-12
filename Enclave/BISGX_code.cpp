@@ -134,6 +134,11 @@ void Bcode::syntaxChk()
 
 				break;
 
+			case InquiryDB:
+				sysFncExec_syntax(code.kind);
+
+				break;
+
 			case Gvar: case Lvar:
 				(void)get_memAdrs(code);
 				(void)get_expression('=', EofLine);
@@ -362,6 +367,12 @@ void Bcode::statement()
 			break;
 
 		case Print: case Println:
+			sysFncExec(code.kind);
+			++Pc;
+
+			break;
+
+		case InquiryDB:
 			sysFncExec(code.kind);
 			++Pc;
 
@@ -912,6 +923,13 @@ void Bcode::sysFncExec_syntax(TknKind kd)
 			chk_EofLine();
 
 			break;
+
+		case InquiryDB:
+			code = nextCode();
+			chk_EofLine();
+
+			break;
+
 	}
 }
 
@@ -1022,6 +1040,34 @@ void Bcode::sysFncExec(TknKind kd)
 			}
 
 			break;
+
+		case InquiryDB:
+		{
+			code = nextCode();
+
+			int inquired_size = -9999;
+
+
+			OCALL_calc_inquiryDB_size(&inquired_size);
+
+			uint8_t *inquiryDB_char = new uint8_t[inquired_size]();
+
+			OCALL_inquiryDB(inquiryDB_char, inquired_size);
+
+
+			std::string dummy_str = std::string((char*)inquiryDB_char);
+
+			while(dummy_str.length() > inquired_size)
+			{
+				dummy_str.pop_back();
+			}
+
+			Bmain::result_str += dummy_str;
+
+			delete inquiryDB_char;
+
+			break;
+		}
 	}
 }
 

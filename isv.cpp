@@ -161,6 +161,7 @@ public:
 	void setUsername(string username);
 	string do_executeQuery(string sentence, string cond);
 	int do_executeQueryInt(string sentence, string cond);
+	string do_inquiryDB(); // for interpreter
 	/*
 	should be added is:
 		- username searcher
@@ -352,6 +353,24 @@ void BISGX_Database::setUsername(string username)
 {
 	username_internal = username;
 }
+
+string BISGX_Database::do_inquiryDB()
+{
+	res = stmt->executeQuery
+		("SELECT dataname, datatype FROM stored_data");
+	string inquiry_res;
+	
+	while(res->next())
+	{
+		inquiry_res += res->getString("dataname");
+		inquiry_res += " ->  ";
+		inquiry_res += res->getString("datatype");
+		inquiry_res += "\n";
+	}
+
+	return inquiry_res;
+}
+
 
 void OCALL_print(const char* message)
 {
@@ -557,6 +576,32 @@ void OCALL_load_db(uint8_t *sealed_data, int buflen, char *dataset_name)
 	sealedlen = base64_decrypt(sealedb64,
 		sealedb64len, sealed_data, sealedb64len);
 }
+
+void OCALL_calc_inquiryDB_size(int *inquired_size)
+{
+	string inquiry_res = "";
+
+	inquiry_res = bdb.do_inquiryDB();
+
+	*inquired_size = inquiry_res.length();
+}
+
+void OCALL_inquiryDB(uint8_t *inquiry_res, int buflen)
+{
+	string inquiry_res_str = "";
+
+	inquiry_res_str = bdb.do_inquiryDB();
+
+	uint8_t *dummy = reinterpret_cast<uint8_t*>
+		(const_cast<char*>(inquiry_res_str.c_str()));
+
+
+	for(int i = 0; i < strlen((char*)dummy); i++)
+	{
+		inquiry_res[i] = dummy[i];
+	}
+}
+
 
 int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb, string *datatype_str)
 {
