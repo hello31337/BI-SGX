@@ -112,6 +112,11 @@ enclave {
 		void OCALL_chrono_end();
 
 		void OCALL_chrono_end_get_time([out]double *elapsed);
+
+		void OCALL_calc_inquiryDB_size([out]int *inquired_size);
+
+		void OCALL_inquiryDB([in, out, size=buflen]uint8_t *inquiry_res,
+			int buflen);
 	};
 };
 
