@@ -1,5 +1,6 @@
 #include "BISGX.h"
 #include "Enclave_t.h"
+#include <math.h>
 
 namespace Bcode
 {
@@ -75,6 +76,8 @@ namespace Bbfunc
 	extern double executeAverage(std::string dataset_name);
 	extern double executeEdist(std::string dataset_name);
 	extern double executeNWAlignment(std::string dataset_name);
+	extern double executeNWAlignmentDemo(std::string dataset_name,
+		std::string *max_array, std::string *max_array2);
 }
 
 namespace Bmath
@@ -548,7 +551,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 				break;
 
 			case Toint: case Input: case Average: case Edist: case Galign:
-			case Exp:
+			case Exp: case Sin: case Cos: case Tan: case Log:
 				sysFncExec_syntax(kd);
 
 				break;
@@ -604,7 +607,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 			break;
 
 		case Toint: case Input: case Average: case Edist: case Galign:
-		case Exp:
+		case Exp: case Sin: case Cos: case Tan: case Log:
 			sysFncExec(kd);
 
 			break;
@@ -903,6 +906,34 @@ void Bcode::sysFncExec_syntax(TknKind kd)
 			stk.push(1.0);
 			
 			break;
+		
+		case Sin:
+			code = nextCode();
+			(void)get_expression('(', ')');
+			stk.push(1.0);
+
+			break;
+
+		case Cos:
+			code = nextCode();
+			(void)get_expression('(', ')');
+			stk.push(1.0);
+
+			break;
+
+		case Tan:
+			code = nextCode();
+			(void)get_expression('(', ')');
+			stk.push(1.0);
+
+			break;
+
+		case Log:
+			code = nextCode();
+			(void)get_expression('(', ')');
+			stk.push(1.0);
+
+			break;
 	
 		case Print: case Println:
 			do
@@ -1010,6 +1041,30 @@ void Bcode::sysFncExec(TknKind kd)
 
 			break;
 		}
+
+		case Sin:
+			code = nextCode();
+			stk.push(sin(get_expression('(', ')')));
+
+			break;
+
+		case Cos:
+			code = nextCode();
+			stk.push(cos(get_expression('(', ')')));
+
+			break;
+
+		case Tan:
+			code = nextCode();
+			stk.push(tan(get_expression('(', ')')));
+
+			break;
+
+		case Log:
+			code = nextCode();
+			stk.push(log(get_expression('(', ')')));
+
+			break;
 
 		case Print: case Println:
 			do

@@ -355,7 +355,8 @@ int do_NW(std::string seq1, std::string seq2, int *mtx)
 	}
 
 	return nw.back();
-}	
+}
+
 
 
 
