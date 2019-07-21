@@ -82,7 +82,7 @@ namespace Bbfunc
 
 namespace Bmath
 {
-	extern double calculateExp(double base, double exponent);
+	extern double calculatePow(double base, double exponent);
 }
 
 void Bcode::syntaxChk()
@@ -551,7 +551,9 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 				break;
 
 			case Toint: case Input: case Average: case Edist: case Galign:
-			case Exp: case Sin: case Cos: case Tan: case Log:
+			case Pow: case Sin: case Cos: case Tan: case Log: case Log10:
+			case Exp: case Sqrt: case Cbrt: case Ceil: case Absl:
+			case Floor:
 				sysFncExec_syntax(kd);
 
 				break;
@@ -607,7 +609,9 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 			break;
 
 		case Toint: case Input: case Average: case Edist: case Galign:
-		case Exp: case Sin: case Cos: case Tan: case Log:
+		case Pow: case Sin: case Cos: case Tan: case Log: case Log10:
+		case Exp: case Sqrt: case Cbrt: case Ceil: case Absl:
+		case Floor:
 			sysFncExec(kd);
 
 			break;
@@ -896,7 +900,7 @@ void Bcode::sysFncExec_syntax(TknKind kd)
 
 			break;
 
-		case Exp:
+		case Pow:
 			code = nextCode();
 			code = chk_nextCode(code, '(');
 			(void)get_expression();
@@ -907,34 +911,15 @@ void Bcode::sysFncExec_syntax(TknKind kd)
 			
 			break;
 		
-		case Sin:
+		case Sin: case Cos: case Tan: case Log: case Log10:
+		case Exp: case Sqrt: case Cbrt: case Ceil: case Absl:
+		case Floor:
 			code = nextCode();
 			(void)get_expression('(', ')');
 			stk.push(1.0);
 
 			break;
 
-		case Cos:
-			code = nextCode();
-			(void)get_expression('(', ')');
-			stk.push(1.0);
-
-			break;
-
-		case Tan:
-			code = nextCode();
-			(void)get_expression('(', ')');
-			stk.push(1.0);
-
-			break;
-
-		case Log:
-			code = nextCode();
-			(void)get_expression('(', ')');
-			stk.push(1.0);
-
-			break;
-	
 		case Print: case Println:
 			do
 			{
@@ -1020,7 +1005,7 @@ void Bcode::sysFncExec(TknKind kd)
 			break;
 		}
 
-		case Exp:
+		case Pow:
 		{
 			double base, exponent, temp;
 
@@ -1034,7 +1019,7 @@ void Bcode::sysFncExec(TknKind kd)
 
 			exponent = code.dblVal; //obtain exponent
 
-			temp = Bmath::calculateExp(base, exponent);
+			temp = Bmath::calculatePow(base, exponent);
 			stk.push(temp);
 
 			code = nextCode(); //Need to skip RParen
@@ -1063,6 +1048,48 @@ void Bcode::sysFncExec(TknKind kd)
 		case Log:
 			code = nextCode();
 			stk.push(log(get_expression('(', ')')));
+
+			break;
+
+		case Log10:
+			code = nextCode();
+			stk.push(log10(get_expression('(', ')')));
+
+			break;
+
+		case Exp:
+			code = nextCode();
+			stk.push(exp(get_expression('(', ')')));
+
+			break;
+
+		case Sqrt:
+			code = nextCode();
+			stk.push(sqrt(get_expression('(', ')')));
+
+			break;
+
+		case Cbrt:
+			code = nextCode();
+			stk.push(cbrt(get_expression('(', ')')));
+
+			break;
+
+		case Ceil:
+			code = nextCode();
+			stk.push(ceil(get_expression('(', ')')));
+
+			break;
+
+		case Absl:
+			code = nextCode();
+			stk.push(fabs(get_expression('(', ')')));
+
+			break;
+
+		case Floor:
+			code = nextCode();
+			stk.push(floor(get_expression('(', ')')));
 
 			break;
 
