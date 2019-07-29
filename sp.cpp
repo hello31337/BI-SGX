@@ -145,7 +145,7 @@ int base64_decrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen);
 
 uint8_t* generate_nonce(int sz);
 
-int send_login_info(MsgIO *msgio, ra_session_t session);
+int send_login_info(MsgIO *msgio, ra_session_t session, string *username);
 
 chrono::system_clock::time_point chrono_start, chrono_end;
 
@@ -750,10 +750,18 @@ int main(int argc, char *argv[])
 		//to avoid compile error caused by goto sentence
 		{
 			ifstream fin_intp;
-			string intp_filename, intp_str;
+			string intp_filename, intp_str, username;
 			stringstream ss_intp;
 		
-			int login_ret = send_login_info(msgio, session);
+			int login_ret = send_login_info(msgio, session, &username);
+			
+			intp_str = "";
+
+			if(login_ret == 0) /* Data owner */
+			{
+				intp_str += username;
+				intp_str += "\n";
+			}
 
 			while(1)
 			{
@@ -777,7 +785,7 @@ int main(int argc, char *argv[])
 			}
 
 			ss_intp << fin_intp.rdbuf();
-			intp_str = ss_intp.str();
+			intp_str += ss_intp.str();
 			
 			unsigned char *intp_plain;
 			unsigned const char *dummy_plain;
@@ -2232,9 +2240,10 @@ uint8_t* generate_nonce(int size)
 	return nonce_heap;
 }
 
-int send_login_info(MsgIO *msgio, ra_session_t session)
+int send_login_info(MsgIO *msgio, ra_session_t session, string *username)
 {
 	ifstream fin_login;
+	int mode_flag = -1;
 
 	fin_login.open("login.ini", ios::in);
 
@@ -2259,6 +2268,8 @@ int send_login_info(MsgIO *msgio, ra_session_t session)
 		cerr << "Username must be 20 or less characters." << endl;
 		return -1;
 	}
+
+	*username = tmp;
 
 	login_info += tmp;
 	login_info += "\n";
@@ -2288,6 +2299,7 @@ int send_login_info(MsgIO *msgio, ra_session_t session)
 
 	login_info += tmp;
 	login_info += "\n";
+	mode_flag = 1;
 
 	//datatype, if Owner
 	if(tmp == "O")
@@ -2304,6 +2316,7 @@ int send_login_info(MsgIO *msgio, ra_session_t session)
 		}
 
 		login_info += tmp;
+		mode_flag = 0;
 	}
 
 	cout << endl;
@@ -2438,7 +2451,7 @@ int send_login_info(MsgIO *msgio, ra_session_t session)
 	cout << "Complete sending default cipher length." << endl;
 	cout << "==========================================================" << endl;
 
-	return 0;
+	return mode_flag;
 }
 
 #ifndef _WIN32

@@ -394,7 +394,9 @@ double Bbfunc::executeAverage(std::string dataset_name)
 	int datanum = 0;
 	char *token_div;
 
-	token_div = strtok((char*)decrypt_buf, "\n");
+	token_div = strtok((char*)decrypt_buf, "\n"); //discard username
+	token_div = strtok(NULL, "\n");
+
 	average += atof(token_div);
 	datanum++;
 	
@@ -451,7 +453,10 @@ double Bbfunc::executeEdist(std::string dataset_name)
 	std::string genome_query;
 	std::vector<std::string> genome_vec;
 
-	token_div = strtok((char*)decrypt_buf, "\n");
+
+	token_div = strtok((char*)decrypt_buf, "\n"); //discard username
+	token_div = strtok(NULL, "\n");
+
 	genome_query = token_div;
 	
 	while((token_div = strtok(NULL, "\n")) != NULL)
@@ -523,7 +528,8 @@ double Bbfunc::executeNWAlignment(std::string dataset_name)
 	std::vector<std::string> seq_vec;
 
 	/*parse FASTA format*/
-	token_div = strtok((char*)decrypt_buf, "\n");
+	token_div = strtok((char*)decrypt_buf, "\n"); //discard username
+	token_div = strtok(NULL, "\n");
 	
 	while((token_div = strtok(NULL, "\n")) != NULL)
 	{
