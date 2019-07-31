@@ -83,6 +83,7 @@ namespace Bbfunc
 namespace Bmath
 {
 	extern double calculatePow(double base, double exponent);
+	extern double generateTrustedRandomNumber(int min, int max);
 }
 
 void Bcode::syntaxChk()
@@ -553,7 +554,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 			case Toint: case Input: case Average: case Edist: case Galign:
 			case Pow: case Sin: case Cos: case Tan: case Log: case Log10:
 			case Exp: case Sqrt: case Cbrt: case Ceil: case Absl:
-			case Floor:
+			case Floor: case Round: case Rand:
 				sysFncExec_syntax(kd);
 
 				break;
@@ -611,7 +612,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 		case Toint: case Input: case Average: case Edist: case Galign:
 		case Pow: case Sin: case Cos: case Tan: case Log: case Log10:
 		case Exp: case Sqrt: case Cbrt: case Ceil: case Absl:
-		case Floor:
+		case Floor: case Round: case Rand:
 			sysFncExec(kd);
 
 			break;
@@ -900,7 +901,7 @@ void Bcode::sysFncExec_syntax(TknKind kd)
 
 			break;
 
-		case Pow:
+		case Pow: case Rand:
 			code = nextCode();
 			code = chk_nextCode(code, '(');
 			(void)get_expression();
@@ -913,7 +914,7 @@ void Bcode::sysFncExec_syntax(TknKind kd)
 		
 		case Sin: case Cos: case Tan: case Log: case Log10:
 		case Exp: case Sqrt: case Cbrt: case Ceil: case Absl:
-		case Floor:
+		case Floor: case Round:
 			code = nextCode();
 			(void)get_expression('(', ')');
 			stk.push(1.0);
@@ -1010,19 +1011,30 @@ void Bcode::sysFncExec(TknKind kd)
 			double base, exponent, temp;
 
 			code = nextCode(); //LParen
-			code = nextCode(); //base
 
-			base = code.dblVal; //obtain base
+			base = get_expression('(', ',');
+			exponent = get_expression(0, ')');
 
-			code = nextCode(); //Comma
-			code = nextCode(); //exponent
-
-			exponent = code.dblVal; //obtain exponent
 
 			temp = Bmath::calculatePow(base, exponent);
 			stk.push(temp);
 
-			code = nextCode(); //Need to skip RParen
+			break;
+		}
+
+		case Rand:
+		{
+			int rand_min, rand_max;
+			double temp;
+
+			code = nextCode();
+
+			rand_min = (int)get_expression('(', ',');
+			rand_max = (int)get_expression(0, ')');
+
+
+			temp = Bmath::generateTrustedRandomNumber(rand_min, rand_max);
+			stk.push(temp);
 
 			break;
 		}
@@ -1090,6 +1102,12 @@ void Bcode::sysFncExec(TknKind kd)
 		case Floor:
 			code = nextCode();
 			stk.push(floor(get_expression('(', ')')));
+
+			break;
+
+		case Round:
+			code = nextCode();
+			stk.push(round(get_expression('(', ')')));
 
 			break;
 
