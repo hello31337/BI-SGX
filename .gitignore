@@ -19,8 +19,16 @@ todo.txt
 *.o
 result.dat
 sample*.dat
-login*.ini
+login*
 objdump*
 rng_python/
 sigstruct.dat
 sp.cpp.bak*
+.Enclave.bak/
+bak.*.cpp
+CHANGES.md
+sealed*
+stamp-h1
+settings
+.deps/
+Enclave/.deps/

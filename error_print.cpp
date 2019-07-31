@@ -3,10 +3,11 @@
 void sgx_error_print(sgx_status_t status)
 {
 	std::cerr << "==================================================================================" << std::endl;
+	
+	std::cerr << "Status: ";
+	
 	switch(status)
 	{
-		std::cerr << "Error name: ";
-
 		case 0x0000:
 			std::cerr << "SGX_SUCCESS" << std::endl;
 			std::cerr << "Exited SGX function successfully." << std::endl;
