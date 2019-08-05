@@ -47,6 +47,12 @@ namespace Bbfunc
 	double executeAverage(std::string dataset_name);
 	double executeEdist(std::string dataset_name);
 	double executeNWAlignment(std::string dataset_name);
+	double searchAnnotation(std::string annotation_id);
+}
+
+namespace Bmain
+{
+	extern std::string result_str;
 }
 
 
@@ -597,4 +603,28 @@ double Bbfunc::executeNWAlignment(std::string dataset_name)
 
 	return (double)max_score;
 
+}
+
+double Bbfunc::searchAnnotation(std::string annotation_id)
+{
+	int id_len = annotation_id.length() + 1;
+	int ocall_ret;
+	char *id_char = new char[id_len]();
+	char annotation[512] = {0};
+	sgx_status_t status = SGX_SUCCESS;
+
+	id_char = const_cast<char*>(annotation_id.c_str());
+
+	status = OCALL_select_annotation(&ocall_ret, id_char, annotation);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print_status(status);
+		throw std::string("Internal SGX error.");
+	}
+
+	Bmain::result_str += std::string(annotation);
+	Bmain::result_str += "\n";
+
+	return (double)ocall_ret;
 }

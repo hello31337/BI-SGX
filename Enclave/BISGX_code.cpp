@@ -78,6 +78,7 @@ namespace Bbfunc
 	extern double executeNWAlignment(std::string dataset_name);
 	extern double executeNWAlignmentDemo(std::string dataset_name,
 		std::string *max_array, std::string *max_array2);
+	extern double searchAnnotation(std::string annotation_id);
 }
 
 namespace Bmath
@@ -554,7 +555,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 			case Toint: case Input: case Average: case Edist: case Galign:
 			case Pow: case Sin: case Cos: case Tan: case Log: case Log10:
 			case Exp: case Sqrt: case Cbrt: case Ceil: case Absl:
-			case Floor: case Round: case Rand:
+			case Floor: case Round: case Rand: case SearchA:
 				sysFncExec_syntax(kd);
 
 				break;
@@ -612,7 +613,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 		case Toint: case Input: case Average: case Edist: case Galign:
 		case Pow: case Sin: case Cos: case Tan: case Log: case Log10:
 		case Exp: case Sqrt: case Cbrt: case Ceil: case Absl:
-		case Floor: case Round: case Rand:
+		case Floor: case Round: case Rand: case SearchA:
 			sysFncExec(kd);
 
 			break;
@@ -874,25 +875,7 @@ void Bcode::sysFncExec_syntax(TknKind kd)
 
 			break;
 
-		case Average:
-			code = nextCode();
-			code = chk_nextCode(code, '(');
-			code = chk_nextCode(code, String);
-			code = chk_nextCode(code, ')');
-			stk.push(1.0);
-
-			break;
-
-		case Edist:
-			code = nextCode();
-			code = chk_nextCode(code, '(');
-			code = chk_nextCode(code, String);
-			code = chk_nextCode(code, ')');
-			stk.push(1.0);
-
-			break;
-
-		case Galign:
+		case Average: case Edist: case Galign: case SearchA:
 			code = nextCode();
 			code = chk_nextCode(code, '(');
 			code = chk_nextCode(code, String);
@@ -999,6 +982,19 @@ void Bcode::sysFncExec(TknKind kd)
 			code = nextCode(); //String
 
 			double temp = Bbfunc::executeNWAlignment(code.text);
+			stk.push(temp);
+
+			code = nextCode(); // Need to skip RParen
+
+			break;
+		}
+
+		case SearchA:
+		{
+			code = nextCode(); //LParen
+			code = nextCode(); //String
+
+			double temp = Bbfunc::searchAnnotation(code.text);
 			stk.push(temp);
 
 			code = nextCode(); // Need to skip RParen

@@ -160,6 +160,7 @@ public:
 	void storeDB(string data_to_store, string datatype, int cipherlen);
 	void setUsername(string username);
 	string do_executeQuery(string sentence, string cond);
+	string do_executeQuery_Annotation(string sentence);
 	int do_executeQueryInt(string sentence, string cond);
 	string do_inquiryDB(); // for interpreter
 	/*
@@ -308,6 +309,31 @@ string BISGX_Database::do_executeQuery(string sentence, string cond)
 	while(res->next())
 	{
 		retstr = res->getString(cond);
+	}
+
+	return retstr;
+}
+
+string BISGX_Database::do_executeQuery_Annotation(string sentence)
+{
+	res = stmt->executeQuery(sentence);
+	string retstr;
+
+	while(res->next())
+	{
+		if(res->getString("CHROM") == "")
+		{
+			return string("");
+		}
+
+		retstr += res->getString("CHROM") + string("\t");
+		retstr += res->getString("POS") + string("\t");
+		retstr += res->getString("ID") + string("\t");
+		retstr += res->getString("REF") + string("\t");
+		retstr += res->getString("ALT") + string("\t");
+		retstr += res->getString("QUAL") + string("\t");
+		retstr += res->getString("FILTER") + string("\t");
+		retstr += res->getString("INFO");
 	}
 
 	return retstr;
@@ -575,6 +601,50 @@ void OCALL_load_db(uint8_t *sealed_data, int buflen, char *dataset_name)
 
 	sealedlen = base64_decrypt(sealedb64,
 		sealedb64len, sealed_data, sealedb64len);
+}
+
+int OCALL_select_annotation(char *id, char *record)
+{
+	try
+	{
+		string id_str(id);
+
+		string query = "SELECT * FROM vcf WHERE ID = '";
+		query += id_str;
+		query += "'";
+
+		string record_str = bdb.do_executeQuery_Annotation(query);
+
+		if(record_str == "")
+		{
+			record_str += "WARNING: Designated annotation '";
+			record_str += id_str;
+			record_str += "' is not found.";
+		}
+
+		int record_len = record_str.length() + 1;
+
+		char *temp = new char[record_len]();
+		temp = (char*)record_str.c_str();
+
+		for(int i = 0; i < record_len; i++)
+		{
+			record[i] = temp[i];
+		}
+
+	}
+	catch(sql::SQLException &e)
+	{
+		cerr << "# ERR: SQLException in " << __FILE__ << " on line " << __LINE__ << endl;
+		cerr << "# ERR: " << e.what() << endl;
+		cerr << " (MySQL error code: " << e.getErrorCode();
+		cerr << ", SQLState: " << e.getSQLState() << ")" << endl;
+
+		return -1;
+	}
+
+	return 0;
+
 }
 
 void OCALL_calc_inquiryDB_size(int *inquired_size)

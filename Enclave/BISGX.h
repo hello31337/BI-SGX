@@ -77,7 +77,7 @@ enum TknKind
 	Step,	While,	End,	Break,	Return,	Option,	Print,	Println,
 	Average,Edist,	Galign,	Pow,	InquiryDB,
 	Sin,	Cos,	Tan,	Log,	Log10,	Exp,	Sqrt,	Cbrt,
-	Ceil,	Absl,	Floor,	Round,	Rand,
+	Ceil,	Absl,	Floor,	Round,	Rand,	SearchA,
 	Input,	Toint,	Exit,	Equal,	NotEq,
 	Less,	LessEq,	Great,  GreatEq,And,	Or,		END_KeyList,
 	Ident,	IntNum,	DblNum,	String,	Letter,	Doll,	Digit,
