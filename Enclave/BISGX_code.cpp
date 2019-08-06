@@ -78,7 +78,8 @@ namespace Bbfunc
 	extern double executeNWAlignment(std::string dataset_name);
 	extern double executeNWAlignmentDemo(std::string dataset_name,
 		std::string *max_array, std::string *max_array2);
-	extern double searchAnnotation(std::string annotation_id);
+	extern double searchAnnotation(std::string annotation_id,
+		int vcf_or_list, int clinvar_flag);
 }
 
 namespace Bmath
@@ -875,7 +876,7 @@ void Bcode::sysFncExec_syntax(TknKind kd)
 
 			break;
 
-		case Average: case Edist: case Galign: case SearchA:
+		case Average: case Edist: case Galign:
 			code = nextCode();
 			code = chk_nextCode(code, '(');
 			code = chk_nextCode(code, String);
@@ -883,6 +884,19 @@ void Bcode::sysFncExec_syntax(TknKind kd)
 			stk.push(1.0);
 
 			break;
+
+		case SearchA:
+			code = nextCode();
+			code = chk_nextCode(code, '(');
+			code = chk_nextCode(code, String);
+			code = chk_nextCode(code, ',');
+			(void)get_expression();
+			code = chk_nextCode(code, ',');
+			(void)get_expression();
+			code = chk_nextCode(code, ')');
+			stk.push(1.0);
+
+			break;			
 
 		case Pow: case Rand:
 			code = nextCode();
@@ -991,13 +1005,31 @@ void Bcode::sysFncExec(TknKind kd)
 
 		case SearchA:
 		{
+			std::string anID;
+			int vcf_or_list, clinvar_flag;
+			/* 
+			* vcf_or_list:  0->vcf
+			* 				else->listed format
+			* clinvar_flag: 0->don't include clinvar info
+			* 				else->include clinvar info
+			*/
+
 			code = nextCode(); //LParen
 			code = nextCode(); //String
 
-			double temp = Bbfunc::searchAnnotation(code.text);
+			anID = code.text;
+
+			code = nextCode();
+
+			vcf_or_list = (int)get_expression(',', ',');
+			clinvar_flag = (int)get_expression(0, ')');
+
+			code = nextCode();
+
+			double temp = Bbfunc::searchAnnotation(anID, 
+				vcf_or_list, clinvar_flag);
 			stk.push(temp);
 
-			code = nextCode(); // Need to skip RParen
 
 			break;
 		}

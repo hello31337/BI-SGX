@@ -160,7 +160,8 @@ public:
 	void storeDB(string data_to_store, string datatype, int cipherlen);
 	void setUsername(string username);
 	string do_executeQuery(string sentence, string cond);
-	string do_executeQuery_Annotation(string sentence);
+	string do_executeQuery_Annotation(string sentence, 
+		int vcf_or_list, int clinvar_flag);
 	int do_executeQueryInt(string sentence, string cond);
 	string do_inquiryDB(); // for interpreter
 	/*
@@ -174,8 +175,8 @@ public:
 private:
 	sql::Driver *driver;
 	sql::Connection *con;
-	sql::Statement *stmt;
-	sql::ResultSet *res;
+	sql::Statement *stmt, *stmt2;
+	sql::ResultSet *res, *res2;
 	sql::PreparedStatement *prep_stmt;
 
 	string host;
@@ -200,6 +201,7 @@ void BISGX_Database::initDB()
 	driver = get_driver_instance();
 	con = driver->connect(host, user, password);
 	stmt = con->createStatement();
+	stmt2 = con->createStatement();
 
 	stmt->execute("USE " + database);
 
@@ -314,10 +316,11 @@ string BISGX_Database::do_executeQuery(string sentence, string cond)
 	return retstr;
 }
 
-string BISGX_Database::do_executeQuery_Annotation(string sentence)
+string BISGX_Database::do_executeQuery_Annotation(string sentence,
+	int vcf_or_list, int clinvar_flag)
 {
 	res = stmt->executeQuery(sentence);
-	string retstr;
+	string retstr, vcf_pos;
 
 	while(res->next())
 	{
@@ -326,16 +329,86 @@ string BISGX_Database::do_executeQuery_Annotation(string sentence)
 			return string("");
 		}
 
-		retstr += res->getString("CHROM") + string("\t");
-		retstr += res->getString("POS") + string("\t");
-		retstr += res->getString("ID") + string("\t");
-		retstr += res->getString("REF") + string("\t");
-		retstr += res->getString("ALT") + string("\t");
-		retstr += res->getString("QUAL") + string("\t");
-		retstr += res->getString("FILTER") + string("\t");
-		retstr += res->getString("INFO");
-	}
+		if(vcf_or_list == 0)
+		{
+			retstr += res->getString("CHROM") + string("\t");
+			retstr += res->getString("POS") + string("\t");
+			retstr += res->getString("ID") + string("\t");
+			retstr += res->getString("REF") + string("\t");
+			retstr += res->getString("ALT") + string("\t");
+			retstr += res->getString("QUAL") + string("\t");
+			retstr += res->getString("FILTER") + string("\t");
+			retstr += res->getString("INFO");
+		}
+		else
+		{
+			retstr += "#ID\n";
+			retstr += res->getString("ID") + std::string("\n\n");
+			retstr += "#CHROM\n";
+			retstr += res->getString("CHROM") + std::string("\n\n");
+			retstr += "#POS\n";
+			retstr += res->getString("POS") + std::string("\n\n");
+			retstr += "#REF\n";
+			retstr += res->getString("REF") + std::string("\n\n");
+			retstr += "#ALT\n";
+			retstr += res->getString("ALT") + std::string("\n\n");
+			retstr += "#QUAL\n";
+			retstr += res->getString("QUAL") + std::string("\n\n");
+			retstr += "#FILTER\n";
+			retstr += res->getString("FILTER") + std::string("\n\n");
+			retstr += "#INFO\n";
+			retstr += res->getString("INFO") + std::string("\n\n");
+		}
 
+		vcf_pos = res->getString("POS");
+
+		if(clinvar_flag != 0)
+		{
+			string sentence_clinvar = "SELECT INFO FROM clinvar WHERE POS = '";
+			sentence_clinvar += vcf_pos;
+			sentence_clinvar += "'";
+
+			res2 = stmt2->executeQuery(sentence_clinvar);
+
+			std::string clinvar_info = "";
+
+			while(res2->next())
+			{
+				clinvar_info = res2->getString("INFO");
+
+				if(clinvar_info == "")
+				{
+					clinvar_info = "N/A";
+				}
+
+				if(vcf_or_list == 0)
+				{
+					retstr += "\t";
+					retstr += clinvar_info;
+				}
+				else
+				{
+					retstr += "#INFO(CLINVAR)\n";
+					retstr += clinvar_info + std::string("\n");
+				}
+			}
+
+			if(clinvar_info == "")
+			{
+				if(vcf_or_list == 0)
+				{
+					retstr += "\tN/A";
+				}
+				else
+				{
+					retstr += "#INFO(CLINVAR)\nN/A\n";
+				}
+			}
+		}
+
+		retstr += "\n";
+	}
+	
 	return retstr;
 }
 
@@ -603,7 +676,8 @@ void OCALL_load_db(uint8_t *sealed_data, int buflen, char *dataset_name)
 		sealedb64len, sealed_data, sealedb64len);
 }
 
-int OCALL_select_annotation(char *id, char *record)
+int OCALL_select_annotation(char *id, char *record, 
+	int vcf_or_list, int clinvar_flag)
 {
 	try
 	{
@@ -613,7 +687,8 @@ int OCALL_select_annotation(char *id, char *record)
 		query += id_str;
 		query += "'";
 
-		string record_str = bdb.do_executeQuery_Annotation(query);
+		string record_str = bdb.do_executeQuery_Annotation(query, 
+			vcf_or_list, clinvar_flag);
 
 		if(record_str == "")
 		{

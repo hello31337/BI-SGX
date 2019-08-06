@@ -117,6 +117,10 @@ enclave {
 
 		void OCALL_inquiryDB([in, out, size=buflen]uint8_t *inquiry_res,
 			int buflen);
+
+		int OCALL_select_annotation([in, string]char *id, 
+			[out, size=2048]char *record, int vcf_or_list, 
+			int clinvar_flag);
 	};
 };
 

@@ -47,7 +47,8 @@ namespace Bbfunc
 	double executeAverage(std::string dataset_name);
 	double executeEdist(std::string dataset_name);
 	double executeNWAlignment(std::string dataset_name);
-	double searchAnnotation(std::string annotation_id);
+	double searchAnnotation(std::string annotation_id, 
+		int vcf_or_list, int clinvar_flag);
 }
 
 namespace Bmain
@@ -605,17 +606,19 @@ double Bbfunc::executeNWAlignment(std::string dataset_name)
 
 }
 
-double Bbfunc::searchAnnotation(std::string annotation_id)
+double Bbfunc::searchAnnotation(std::string annotation_id,
+	int vcf_or_list, int clinvar_flag)
 {
 	int id_len = annotation_id.length() + 1;
 	int ocall_ret;
 	char *id_char = new char[id_len]();
-	char annotation[512] = {0};
+	char annotation[2048] = {0};
 	sgx_status_t status = SGX_SUCCESS;
 
 	id_char = const_cast<char*>(annotation_id.c_str());
 
-	status = OCALL_select_annotation(&ocall_ret, id_char, annotation);
+	status = OCALL_select_annotation(&ocall_ret, id_char, 
+		annotation, vcf_or_list, clinvar_flag);
 
 	if(status != SGX_SUCCESS)
 	{
