@@ -1303,7 +1303,7 @@ int main (int argc, char *argv[])
 		void **received_tag;
 		void **received_deflen;
 		size_t cipherb64len, ivb64len, tagb64len, recvdeflen;
-		
+
 		rv = msgio->read((void **) &received_iv, &sz);
 
 		if(rv == -1) {
@@ -1352,8 +1352,7 @@ int main (int argc, char *argv[])
 			return 0;
 		}
 
-		cipherb64len = sz / 2;
-
+		cipherb64len = sz;
 
 
 		/*

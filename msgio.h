@@ -35,7 +35,8 @@ using namespace std;
 #define STRUCT_OMITS_PSIZE		1
 
 /* A 1MB buffer should be sufficient for demo purposes */
-#define MSGIO_BUFFER_SZ	1024*1024
+//#define MSGIO_BUFFER_SZ	1024*1024
+#define MSGIO_BUFFER_SZ	10000000
 
 #define DEFAULT_PORT	"7777"		// A C string for getaddrinfo()
 
