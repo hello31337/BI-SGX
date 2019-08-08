@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <sgx_trts.h>
+#include <limits.h>
 
 
 namespace Bmath
@@ -26,30 +27,39 @@ double Bmath::generateTrustedRandomNumber(int min, int max)
 	}
 
 	uint8_t rand_buf[4] = {0};
-
-	sgx_status_t status = sgx_read_rand(rand_buf, sizeof(uint8_t)*4);
-
-	if(status != SGX_SUCCESS)
-	{
-		OCALL_print_status(status);
-		throw std::string("SGX failed to generate random number.");
-	}
-
 	uint32_t u_rnd, rand_range;
+	uint64_t allowed_range;
 	int32_t res_rnd;
 
-	rand_range = abs(max - min);
+	rand_range = abs(max - min) + 1;
 
-	u_rnd = (uint32_t)rand_buf[0]
-		+ (uint32_t)rand_buf[1] * 256 
-		+ (uint32_t)rand_buf[2] * 256 * 256
-		+ (uint32_t)rand_buf[3] * 256 * 256 * 256;
+	do
+	{
+		sgx_status_t status = sgx_read_rand(rand_buf, sizeof(uint8_t)*4);
+
+		if(status != SGX_SUCCESS)
+		{
+			OCALL_print_status(status);
+			throw std::string("SGX failed to generate random number.");
+		}
+
+		u_rnd = (uint32_t)rand_buf[0]
+			+ (uint32_t)rand_buf[1] * 256 
+			+ (uint32_t)rand_buf[2] * 256 * 256
+			+ (uint32_t)rand_buf[3] * 256 * 256 * 256;
+
+		allowed_range = (uint64_t)((UINT_MAX) / rand_range) * rand_range;
+
+	} while(res_rnd > allowed_range);
+
 
 	/* convert to signed int */
 	res_rnd = abs((int32_t)u_rnd);
 
+
 	/* round range into min~max */
 	res_rnd %= rand_range;
+
 
 	/* get final random number */
 	if(min < max)
