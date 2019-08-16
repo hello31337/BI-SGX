@@ -145,7 +145,12 @@ int base64_decrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen);
 
 uint8_t* generate_nonce(int sz);
 
-int send_login_info(MsgIO *msgio, ra_session_t session, string *username);
+string generate_random_filename();
+
+int send_login_info(MsgIO *msgio, ra_session_t session, 
+	string *username, string *datatype);
+
+int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key);
 
 chrono::system_clock::time_point chrono_start, chrono_end;
 
@@ -750,10 +755,11 @@ int main(int argc, char *argv[])
 		//to avoid compile error caused by goto sentence
 		{
 			ifstream fin_intp;
-			string intp_filename, intp_str, username;
+			string intp_filename, intp_str, username, datatype;
 			stringstream ss_intp;
 		
-			int login_ret = send_login_info(msgio, session, &username);
+			int login_ret = send_login_info(msgio, session, 
+				&username, &datatype);
 			
 			intp_str = "";
 
@@ -763,163 +769,348 @@ int main(int argc, char *argv[])
 				intp_str += "\n";
 			}
 
-			while(1)
-			{
-				cout << "Input filename to send to ISV. " << endl;
-				cout << "Filename: ";
-				cin >> intp_filename;
+			/* variables for vcf transmission */
+            string tar_filename = "";
+            string access_list = "";
 
-				cout << endl;
+            uint8_t *sp_key = session.sk;
 
-				fin_intp.open(intp_filename, ios::in);
+			if(datatype == "vcf")
+            {
+                /* process VCF file to send */
+                int div_total = 0;
 
-				if(!fin_intp)
-				{
-					cerr << "FileOpenError: Failed to open designated file.\n" << endl;
-				}
-				else
-				{
-					cout << "Open designated file \"" << intp_filename << "\" successfully." << endl;
-					break;
-				}
+                div_total = process_vcf(&tar_filename,
+                    &access_list, sp_key);
+
+
+                if(div_total == -1)
+                {
+                    return -1;
+                }
+
+                string wht_filename, whitelist, wht_tmp, disease_type;
+
+                cout << "\nInput filename of whitelist: ";
+                cin >> wht_filename;
+                cout << "\n" << endl;
+
+                ifstream wht_ifs(wht_filename);
+
+                while(!wht_ifs)
+                {
+                    cout << "Failed to open whitelist file." << endl;
+                    cout << "Unput filename of whitelist appropriately: ";
+                    cin >> wht_filename;
+                    cout << "\n" << endl;
+					 wht_ifs.open(wht_filename);
+                }
+
+
+                while(getline(wht_ifs, wht_tmp))
+                {
+                    whitelist += wht_tmp;
+                    whitelist += ';';
+                }
+
+                whitelist.pop_back();
+
+
+                cout << "Input disease type of this VCF file: ";
+                cin >> disease_type;
+				string vcf_context = "";
+
+                vcf_context += whitelist + '\n';
+                vcf_context += disease_type + '\n';
+                vcf_context += tar_filename + '\n';
+                vcf_context += username + '\n';
+                vcf_context += to_string(div_total);
+
+
+                uint8_t *vcf_uctx = (uint8_t*)vcf_context.c_str();
+
+                uint8_t *iv_vctx = new uint8_t[12]();
+                uint8_t *tag_vctx = new uint8_t[16]();
+                uint8_t *vctx_cipher = new uint8_t[vcf_context.length()];
+				uint8_t *vctxb64 = new uint8_t[vcf_context.length() * 2]();
+                int vctx_cipher_length = 0;
+				int vctxb64_len = 0;
+
+				/* encrypt VCF contexts */
+				iv_vctx = generate_nonce(12);
+
+                int vcfctx_cipher_length = encrypt_data_for_ISV(vcf_uctx,
+                    strlen((char*)vcf_uctx), sp_key, iv_vctx,
+                    vctx_cipher, tag_vctx);
+
+
+				/* encode VCF contexts to base64 */
+                vctxb64_len = base64_encrypt(vctx_cipher, vctx_cipher_length,
+                    vctxb64, vctx_cipher_length * 2);
+
+
+				uint8_t *vctxlen_char = 
+					(uint8_t*)to_string(vctx_cipher_length).c_str();
+
+				uint8_t *iv_vctxb64 = new uint8_t[24]();
+				uint8_t *tag_vctxb64 = new uint8_t[32]();
+				uint8_t *deflen_vctxb64 = new uint8_t[64]();
+				int iv_vctxb64_len, tag_vctxb64_len, deflen_vctxb64_len;
+
+
+				iv_vctxb64_len = base64_encrypt(iv_vctx, 12, iv_vctxb64, 24);
+				tag_vctxb64_len = base64_encrypt(tag_vctx, 
+					16, tag_vctxb64, 32);
+				deflen_vctxb64_len = base64_encrypt(vctxlen_char, 
+					strlen((char*)vctxlen_char), deflen_vctxb64, 64);
+
+				/* send VCF contexts */
+				cout << "\nSend VCF contexts to ISV..." << endl;
+
+				msgio->send_nd(vctxb64, vctxb64_len);
+				usleep(250000);
+				msgio->send_nd(iv_vctxb64, iv_vctxb64_len);
+				usleep(250000);
+				msgio->send_nd(tag_vctxb64, tag_vctxb64_len);
+				usleep(250000);
+				msgio->send_nd(deflen_vctxb64, deflen_vctxb64_len);
+
+
+				/* destruct heaps for VCF */
+				delete(iv_vctx);
+				delete(tag_vctx);
+				delete(vctx_cipher);
+				delete(vctxb64);
+				delete(iv_vctxb64);
+				delete(tag_vctxb64);
+				delete(deflen_vctxb64);
+
+                /* Open tarball */
+                string tarball_name = tar_filename + ".tar";
+                ifstream tar_ifs(tarball_name, ios::in | ios::binary);
+
+
+                if(!tar_ifs)
+                {
+                    cerr << "Failed to open tarball." << endl;
+                    return -1;
+                }
+
+
+                tar_ifs.seekg(0, ios::end);
+                uint64_t tarball_size = tar_ifs.tellg();
+                tar_ifs.seekg(0, ios::beg);
+
+                int round_num = tarball_size / 10000000;
+
+                if(round_num != 0)
+                {
+                    round_num++;
+                }
+
+				
+
+
+				/* Send size of tarball */
+                uint8_t *tbsize_char =
+                    (uint8_t*)to_string(tarball_size).c_str();
+
+                cout << "\nSend size of tarball." << endl;
+                msgio->send_nd(tbsize_char, strlen((char*)tbsize_char));
+
+
+                cout << "\nSend encrypted VCF to ISV." << endl;
+
+
+                for(int i = 0; i < round_num; i++)
+                {
+                    int process_length = 0;
+
+                    if(i == round_num - 1)
+                    {
+                        process_length = tarball_size % 10000000;
+                    }
+                    else
+                    {
+                        process_length = 10000000;
+                    }
+
+
+                    uint8_t *tar_uint8t = new uint8_t[process_length]();
+                    tar_ifs.read((char*)tar_uint8t, process_length);
+
+
+                    /* encode tarball to base64 */
+                    int tar_b64len = 0;
+                    uint8_t *tar_b64 = new uint8_t[process_length * 2]();
+                    tar_b64len = base64_encrypt(tar_uint8t, process_length,
+                        tar_b64, process_length * 2);
+
+
+                    /* send partial base64-ed encrypted VCF */
+                    msgio->send_nd(tar_b64, tar_b64len);
+                }
 			}
-
-			ss_intp << fin_intp.rdbuf();
-			intp_str += ss_intp.str();
-			
-			unsigned char *intp_plain;
-			unsigned const char *dummy_plain;
-
-			dummy_plain = reinterpret_cast<unsigned const char*>(intp_str.c_str());
-			intp_plain = const_cast<unsigned char*>(dummy_plain);
-
-			/*
-			cout << "Display the content of loaded file for check: \n" << endl;
-			cout << "===============================================" << endl;
-			cout << intp_plain << endl;
-			cout << "===============================================" << endl;
-			*/
-
-			//Start encryption
-			unsigned char* sp_key = session.sk;
-			unsigned char* sp_iv;
-			unsigned char *intp_cipher = new uint8_t[10000000]();
-			int ciphertext_len, tag_len = 16;
-			uint8_t tag[16] = {'\0'};
-
-			cout << "Generate initialization vector." << endl;
-			sp_iv = generate_nonce(12);
-
-			/*AES/GCM's cipher length is equal to the length of plain text*/
-			ciphertext_len = encrypt_data_for_ISV(intp_plain, strlen((char*)intp_plain), sp_key, sp_iv, intp_cipher, tag);
-
-			if(ciphertext_len == -1)
+			else
 			{
-				cerr << "Failed to operate encryption." << endl;
-				cerr << "Abort program..." << endl;
+				while(1)
+				{
+					cout << "Input filename to send to ISV. " << endl;
+					cout << "Filename: ";
+					cin >> intp_filename;
 
-				return -1;
+					cout << endl;
+
+					fin_intp.open(intp_filename, ios::in);
+
+					if(!fin_intp)
+					{
+						cerr << "FileOpenError: Failed to open designated file.\n" << endl;
+					}
+					else
+					{
+						cout << "Open designated file \"" << intp_filename << "\" successfully." << endl;
+						break;
+					}
+				}
+
+				ss_intp << fin_intp.rdbuf();
+				intp_str += ss_intp.str();
+				
+				unsigned char *intp_plain;
+				unsigned const char *dummy_plain;
+
+				dummy_plain = reinterpret_cast<unsigned const char*>(intp_str.c_str());
+				intp_plain = const_cast<unsigned char*>(dummy_plain);
+
+				/*
+				cout << "Display the content of loaded file for check: \n" << endl;
+				cout << "===============================================" << endl;
+				cout << intp_plain << endl;
+				cout << "===============================================" << endl;
+				*/
+
+				//Start encryption
+				unsigned char* sp_key = session.sk;
+				unsigned char* sp_iv;
+				unsigned char *intp_cipher = new uint8_t[10000000]();
+				int ciphertext_len, tag_len = 16;
+				uint8_t tag[16] = {'\0'};
+
+				cout << "Generate initialization vector." << endl;
+				sp_iv = generate_nonce(12);
+
+				/*AES/GCM's cipher length is equal to the length of plain text*/
+				ciphertext_len = encrypt_data_for_ISV(intp_plain, strlen((char*)intp_plain), sp_key, sp_iv, intp_cipher, tag);
+
+				if(ciphertext_len == -1)
+				{
+					cerr << "Failed to operate encryption." << endl;
+					cerr << "Abort program..." << endl;
+
+					return -1;
+				}
+				
+				cout << "Encrypted data successfully." << endl;
+				//BIO_dump_fp(stdout, (const char*)intp_cipher, ciphertext_len);
+
+				/*convert data to base64 for sending with msgio correctly*/
+				//uint8_t cipherb64[300000] = {'\0'};
+				uint8_t *cipherb64 = new uint8_t[ciphertext_len * 2]();
+				int b64dst_len = ciphertext_len * 2, b64_len;
+
+				b64_len = base64_encrypt(intp_cipher, ciphertext_len, cipherb64, b64dst_len);
+				
+				/*
+				cout << "==========================================================" << endl;
+				cout << "Base64 format of cipher is: " << endl;
+				cout << cipherb64 << endl << endl;
+				cout << "Length of cipher text is: " << ciphertext_len << endl;
+				cout << "Length of base64-ed cipher is: " << b64_len << endl << endl;
+				cout << "==========================================================" << endl;
+				*/
+
+				/*Next, convert IV to base64 format*/
+				uint8_t ivb64[64] = {'\0'}; //maybe sufficient with 32-size
+				int ivb64dst_len = 64, ivb64_len;
+
+				ivb64_len = base64_encrypt(sp_iv, 12, ivb64, ivb64dst_len);
+
+				cout << "Base64 format of initialization vector is: " << endl;
+				cout << ivb64 << endl << endl;
+				cout << "Length of base64-ed IV is: " << ivb64_len << endl << endl;
+				cout << "==========================================================" << endl;
+
+				/*Also convert tag to base64 format*/
+				uint8_t tagb64[64] = {'\0'}; //maybe sufficient with 32-size
+				int tagb64dst_len = 64, tagb64_len;
+
+				tagb64_len = base64_encrypt(tag, 16, tagb64, tagb64dst_len);
+
+				cout << "Base64 format of tag is: " << endl;
+				cout << tagb64 << endl << endl;
+				cout << "Length of base64-ed tag is: " << tagb64_len << endl << endl;
+				cout << "==========================================================" << endl;
+				
+				/*In addition to that, need to convert cipher's length to base64*/
+				uint8_t deflenb64[128] = {'\0'}; 
+				uint8_t *uint8tdeflen;
+				int deflenb64dst_len = 32, deflenb64_len;
+
+				uint8tdeflen = const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(to_string(ciphertext_len).c_str()));
+
+				cout << "uint8_t-ed default cipher length is: " << uint8tdeflen << endl << endl;
+
+				deflenb64_len = base64_encrypt(uint8tdeflen, strlen((char*)uint8tdeflen), deflenb64, 32);
+				cout << "Base64 format of default cipher length is: " << endl;
+				cout << deflenb64 << endl << endl;
+				cout << "Length of base64-ed default cipher length is: " << deflenb64_len << endl;
+				cout << "==========================================================" << endl;
+
+
+				/*Send base64-ed secret, its length, MAC tag and its length to ISV*/
+
+				
+				/*IV*/
+				cout << "Initialization vector to be sent is: " << endl;
+				msgio->send(ivb64, strlen((char*)ivb64));
+
+				cout << "Complete sending IV." << endl;
+				cout << "Please wait for 0.25 sec." << endl;
+				cout << "==========================================================" << endl;
+
+				usleep(250000);
+				
+				/*MAC tag*/
+				cout << "Tag to be sent is: (display again)" << endl;
+				msgio->send(tagb64, strlen((char*)tagb64));
+
+				cout << "Complete sending MAC tag." << endl;
+				cout << "Please wait for 0.25 sec." << endl;
+				cout << "==========================================================" << endl;
+
+				usleep(250000);
+
+				/*default cipher length*/
+				cout << "Default cipher's length to be sent is: " << endl;
+				msgio->send(deflenb64, deflenb64_len);
+
+				cout << "Complete sending default cipher length." << endl;
+				cout << "Please wait for 0.25 sec." << endl;
+				cout << "==========================================================" << endl;
+				
+				usleep(250000);
+
+				/*cipher*/
+				cout << "==========================================================" << endl;
+				cout << "Send encrypted file to ISV." << endl;
+
+				cout << "Encrypted secret to be sent in base64 is (display again): " << endl;
+				msgio->send_nd(cipherb64, strlen((char*)cipherb64));
+
+				cout << "Complete sending message." << endl;
+				cout << "==========================================================" << endl;
 			}
-			
-			cout << "Encrypted data successfully." << endl;
-			//BIO_dump_fp(stdout, (const char*)intp_cipher, ciphertext_len);
-
-			/*convert data to base64 for sending with msgio correctly*/
-			//uint8_t cipherb64[300000] = {'\0'};
-			uint8_t *cipherb64 = new uint8_t[ciphertext_len * 2]();
-			int b64dst_len = ciphertext_len * 2, b64_len;
-
-			b64_len = base64_encrypt(intp_cipher, ciphertext_len, cipherb64, b64dst_len);
-			
-			/*
-			cout << "==========================================================" << endl;
-			cout << "Base64 format of cipher is: " << endl;
-			cout << cipherb64 << endl << endl;
-			cout << "Length of cipher text is: " << ciphertext_len << endl;
-			cout << "Length of base64-ed cipher is: " << b64_len << endl << endl;
-			cout << "==========================================================" << endl;
-			*/
-
-			/*Next, convert IV to base64 format*/
-			uint8_t ivb64[64] = {'\0'}; //maybe sufficient with 32-size
-			int ivb64dst_len = 64, ivb64_len;
-
-			ivb64_len = base64_encrypt(sp_iv, 12, ivb64, ivb64dst_len);
-
-			cout << "Base64 format of initialization vector is: " << endl;
-			cout << ivb64 << endl << endl;
-			cout << "Length of base64-ed IV is: " << ivb64_len << endl << endl;
-			cout << "==========================================================" << endl;
-
-			/*Also convert tag to base64 format*/
-			uint8_t tagb64[64] = {'\0'}; //maybe sufficient with 32-size
-			int tagb64dst_len = 64, tagb64_len;
-
-			tagb64_len = base64_encrypt(tag, 16, tagb64, tagb64dst_len);
-
-			cout << "Base64 format of tag is: " << endl;
-			cout << tagb64 << endl << endl;
-			cout << "Length of base64-ed tag is: " << tagb64_len << endl << endl;
-			cout << "==========================================================" << endl;
-			
-			/*In addition to that, need to convert cipher's length to base64*/
-			uint8_t deflenb64[128] = {'\0'}; 
-			uint8_t *uint8tdeflen;
-			int deflenb64dst_len = 32, deflenb64_len;
-
-			uint8tdeflen = const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(to_string(ciphertext_len).c_str()));
-
-			cout << "uint8_t-ed default cipher length is: " << uint8tdeflen << endl << endl;
-
-			deflenb64_len = base64_encrypt(uint8tdeflen, strlen((char*)uint8tdeflen), deflenb64, 32);
-			cout << "Base64 format of default cipher length is: " << endl;
-			cout << deflenb64 << endl << endl;
-			cout << "Length of base64-ed default cipher length is: " << deflenb64_len << endl;
-			cout << "==========================================================" << endl;
-
-
-			/*Send base64-ed secret, its length, MAC tag and its length to ISV*/
-
-			
-			/*IV*/
-			cout << "Initialization vector to be sent is: " << endl;
-			msgio->send(ivb64, strlen((char*)ivb64));
-
-			cout << "Complete sending IV." << endl;
-			cout << "Please wait for 0.25 sec." << endl;
-			cout << "==========================================================" << endl;
-
-			usleep(250000);
-			
-			/*MAC tag*/
-			cout << "Tag to be sent is: (display again)" << endl;
-			msgio->send(tagb64, strlen((char*)tagb64));
-
-			cout << "Complete sending MAC tag." << endl;
-			cout << "Please wait for 0.25 sec." << endl;
-			cout << "==========================================================" << endl;
-
-			usleep(250000);
-
-			/*default cipher length*/
-			cout << "Default cipher's length to be sent is: " << endl;
-			msgio->send(deflenb64, deflenb64_len);
-
-			cout << "Complete sending default cipher length." << endl;
-			cout << "Please wait for 0.25 sec." << endl;
-			cout << "==========================================================" << endl;
-			
-			usleep(250000);
-
-			/*cipher*/
-			cout << "==========================================================" << endl;
-			cout << "Send encrypted file to ISV." << endl;
-
-			cout << "Encrypted secret to be sent in base64 is (display again): " << endl;
-			msgio->send_nd(cipherb64, strlen((char*)cipherb64));
-
-			cout << "Complete sending message." << endl;
-			cout << "==========================================================" << endl;
 
 			/*Receive result contexts from ISV*/
 			int rv;
@@ -2233,14 +2424,43 @@ uint8_t* generate_nonce(int size)
 		nonce_heap[i] = (uint8_t)randchar(mt);
 	}
 
+	/*
 	cout << "Generated nonce is: " << endl;
 	BIO_dump_fp(stdout, (const char*)nonce_heap, size);
 	cout << endl;
+	*/
 
 	return nonce_heap;
 }
 
-int send_login_info(MsgIO *msgio, ra_session_t session, string *username)
+
+string generate_random_filename()
+{
+    random_device rnd;
+    mt19937 mt(rnd());
+    uniform_int_distribution<> randchar('0', 'z');
+
+    string filename = "";
+    char rch;
+
+    for(int i = 0; i < 16; i++)
+    {
+        rch = (char)randchar(mt);
+
+        while((rch >= ':' && rch <= '@') || (rch >= '[' && rch <= '`'))
+        {
+            rch = (char)randchar(mt);
+        }
+
+        filename += rch;
+    }
+
+    return filename;
+}
+
+
+int send_login_info(MsgIO *msgio, ra_session_t session, 
+	string *username, string *datatype)
 {
 	ifstream fin_login;
 	int mode_flag = -1;
@@ -2307,14 +2527,16 @@ int send_login_info(MsgIO *msgio, ra_session_t session, string *username)
 		tmp = "";
 		getline(fin_login, tmp);
 
-		if(tmp != "integer" && tmp != "genome" && tmp != "FASTA")
+		if(tmp != "integer" && tmp != "genome" && tmp != "FASTA"
+			&& tmp != "vcf")
 		{
 			cerr << "Datatype must be designated only by following: " << endl;
-			cout << "integer, genome, FASTA" << endl;
+			cout << "integer, genome, FASTA, vcf" << endl;
 			cout << "tmp: " << tmp << endl;
 			exit(1);
 		}
 
+		*datatype += tmp;
 		login_info += tmp;
 		mode_flag = 0;
 	}
@@ -2453,6 +2675,187 @@ int send_login_info(MsgIO *msgio, ra_session_t session, string *username)
 
 	return mode_flag;
 }
+
+
+int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key)
+{
+    string vcf_filename;
+
+    cout << "Input filename of vcf to send: ";
+    cin >> vcf_filename;
+    cout << endl;
+
+    ifstream vcf_ifs(vcf_filename, ios::in);
+
+
+    while(!vcf_ifs)
+    {
+        cerr << "Failed to open " << vcf_filename << "." << endl;
+        cerr << "Input appropriate filename: ";
+
+        cin >> vcf_filename;
+        cout << endl;
+
+        vcf_ifs.open(vcf_filename, ios::in);
+    }
+
+    size_t divnum = 0;
+    vcf_ifs.seekg(0, ios::end);
+    divnum = vcf_ifs.tellg();
+    vcf_ifs.seekg(0, ios::beg);
+
+    if(divnum % 20000000 != 0)
+    {
+        divnum /= 20000000;
+        divnum += 1;
+    }
+    else
+    {
+        divnum /= 20000000;
+    }
+
+    /* randomly generate filename for tarball */
+    *tar_filename = generate_random_filename();
+
+	/* Create temporary directory */
+    string mkdir_cmd = "mkdir -p encrypted_vcf/" + *tar_filename;
+    int sys_ret = system(mkdir_cmd.c_str());
+
+    if(!WIFEXITED(sys_ret))
+    {
+        cerr << "Failed to create temporary directory." << endl;
+        return -1;
+    }
+
+    /* start vcf division */
+    int divided_total = 0;
+    int part_size = 0;
+    string vcf_line, divided_vcf;
+    uint8_t *iv_array = new uint8_t[12 * divnum]();
+    uint8_t *tag_array = new uint8_t[16 * divnum]();
+
+    string divided_filename = "encrypted_vcf/";
+    divided_filename += *tar_filename;
+    divided_filename += "/";
+    divided_filename += *tar_filename;
+    divided_filename += ".";
+    divided_filename += to_string(divided_total);
+
+    ofstream div_ofs(divided_filename, ios::out | ios::binary);
+
+
+    while(getline(vcf_ifs, vcf_line))
+    {
+        divided_vcf += vcf_line + '\n';
+        part_size += vcf_line.length();
+
+        if(part_size > 20000000)
+		{
+            uint8_t *iv_temp = new uint8_t[12]();
+            uint8_t *tag_temp = new uint8_t[16]();
+            uint8_t *vcf_cipher = new uint8_t[30000000]();
+            int vcf_cipher_len = 0;
+
+            iv_temp = generate_nonce(12);
+
+            for(int i = 0; i < 12; i++)
+            {
+                iv_array[divided_total * 12 + i] = iv_temp[i];
+            }
+
+            vcf_cipher_len = encrypt_data_for_ISV((uint8_t*)divided_vcf.c_str(),
+                part_size, sp_key, iv_temp, vcf_cipher, tag_temp);
+
+            for(int i = 0; i < 16; i++)
+            {
+                tag_array[divided_total * 16 + i] = tag_temp[i];
+            }
+
+            div_ofs.write((char*)vcf_cipher, vcf_cipher_len);
+
+			cout << "Processed " << divided_filename << " successfully.\n";
+			
+            divided_vcf = "";
+            part_size = 0;
+
+            divided_total++;
+
+            divided_filename = "encrypted_vcf/";
+            divided_filename += *tar_filename;
+            divided_filename += "/";
+            divided_filename += *tar_filename;
+            divided_filename += ".";
+            divided_filename += to_string(divided_total);
+
+
+            div_ofs.close();
+
+			div_ofs.open(divided_filename, ios::out);
+
+
+            if(!div_ofs)
+            {
+                cerr << "Failed to output encrypted vcf." << endl;
+                return -1;
+            }
+
+            delete(iv_temp);
+            delete(tag_temp);
+            delete(vcf_cipher);
+        }
+    }
+
+    /* encrypt remained vcf */
+    uint8_t *iv_temp = new uint8_t[12]();
+    uint8_t *tag_temp = new uint8_t[16]();
+    uint8_t *vcf_cipher = new uint8_t[30000000]();
+    int vcf_cipher_len = 0;
+
+    iv_temp = generate_nonce(12);
+
+	for(int i = 0; i < 12; i++)
+    {
+    	iv_array[divided_total * 12 + i] = iv_temp[i];
+    }
+
+
+    vcf_cipher_len = encrypt_data_for_ISV((uint8_t*)divided_vcf.c_str(),
+        part_size, sp_key, iv_temp, vcf_cipher, tag_temp);
+	
+
+	for(int i = 0; i < 16; i++)
+    {
+        tag_array[divided_total * 16 + i] = tag_temp[i];
+    }
+
+	div_ofs.write((char*)vcf_cipher, vcf_cipher_len);
+
+	divided_vcf = "";
+	part_size = 0;
+
+	divided_total++;
+
+	div_ofs.close();
+
+
+	string tar_cmd = "tar --remove-files -cvf ";
+	tar_cmd += *tar_filename;
+	tar_cmd += ".tar ";
+	tar_cmd += "encrypted_vcf/";
+	tar_cmd += *tar_filename;
+
+	int tar_ret = system(tar_cmd.c_str());
+
+	if(!WIFEXITED(tar_ret))
+	{
+		cerr << "Failed to generate tarball." << endl;
+		return -1;
+	}
+
+	return divided_total;
+}
+
+
 
 #ifndef _WIN32
 

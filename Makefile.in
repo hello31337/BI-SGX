@@ -399,7 +399,7 @@ SGXSSL_BINDIR = @SGXSSL_BINDIR@
 @SGX_ENABLED_FALSE@AM_LDFLAGS = 
 @SGX_ENABLED_TRUE@AM_LDFLAGS = -L$(SGXSDK_LIBDIR)
 SUBDIRS = Enclave 
-AM_CXXFLAGS = -std=c++11 
+AM_CXXFLAGS = -std=c++11 -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64
 CLEANFILES = Enclave_u.c Enclave_u.h Enclave.edl Enclave.signed.so \
 	policy enclave_sigstruct_raw 
 

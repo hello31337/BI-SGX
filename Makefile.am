@@ -49,7 +49,7 @@ Enclave/Enclave.signed.so:
 ## AM_CPPFLAGS += 
 ## AM_CFLAGS = 
 
-AM_CXXFLAGS = -std=c++11 
+AM_CXXFLAGS = -std=c++11 -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64
 
 AM_CPPFLAGS += -fno-builtin-memset @OPENSSL_CPPFLAGS@
 

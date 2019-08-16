@@ -26,7 +26,6 @@ double Bmath::generateTrustedRandomNumber(int min, int max)
 		return min;
 	}
 
-	uint8_t rand_buf[4] = {0};
 	uint32_t u_rnd, rand_range;
 	uint64_t allowed_range;
 	int32_t res_rnd;
@@ -35,18 +34,13 @@ double Bmath::generateTrustedRandomNumber(int min, int max)
 
 	do
 	{
-		sgx_status_t status = sgx_read_rand(rand_buf, sizeof(uint8_t)*4);
+		sgx_status_t status = sgx_read_rand((uint8_t*)&u_rnd, sizeof(uint8_t)*4);
 
 		if(status != SGX_SUCCESS)
 		{
 			OCALL_print_status(status);
 			throw std::string("SGX failed to generate random number.");
 		}
-
-		u_rnd = (uint32_t)rand_buf[0]
-			+ (uint32_t)rand_buf[1] * 256 
-			+ (uint32_t)rand_buf[2] * 256 * 256
-			+ (uint32_t)rand_buf[3] * 256 * 256 * 256;
 
 		allowed_range = (uint64_t)((UINT_MAX) / rand_range) * rand_range;
 

@@ -1296,330 +1296,335 @@ int main (int argc, char *argv[])
 		int login_flag = receive_login_info(msgio, eid, &bdb, &datatype);
 		cout << "Receive secret data from SP... " << endl;
 		
-		int rv;
-		size_t sz;
-		void **received_cipher;
-		void **received_iv;
-		void **received_tag;
-		void **received_deflen;
-		size_t cipherb64len, ivb64len, tagb64len, recvdeflen;
-
-		rv = msgio->read((void **) &received_iv, &sz);
-
-		if(rv == -1) {
-			eprintf("system error reading IV from SP\n");
-			return 0;
-		} else if ( rv == 0 ) {
-			eprintf("protocol error reading IV from SP\n");
-			return 0;
-		}
-
-		ivb64len = sz / 2;
-
-		
-		rv = msgio->read((void **) &received_tag, &sz);
-
-		if ( rv == -1 ) {
-			eprintf("system error reading MAC tag from SP\n");
-			return 0;
-		} else if ( rv == 0 ) {
-			eprintf("protocol error reading MAC tag from SP\n");
-			return 0;
-		}
-
-		tagb64len = sz / 2;
-
-		
-		rv = msgio->read((void **) &received_deflen, &sz);
-
-		if ( rv == -1 ) {
-			eprintf("system error reading default cipher length from SP\n");
-			return 0;
-		} else if ( rv == 0 ) {
-			eprintf("protocol error reading default cipher length from SP\n");
-			return 0;
-		}
-
-		recvdeflen = sz / 2;
-
-		rv = msgio->read_nd((void **) &received_cipher, &sz);
-
-		if ( rv == -1 ) {
-			eprintf("system error reading secret from SP\n");
-			return 0;
-		} else if ( rv == 0 ) {
-			eprintf("protocol error reading secret from SP\n");
-			return 0;
-		}
-
-		cipherb64len = sz;
-
-
-		/*
-		unsigned char *cipher_to_enclave = (unsigned char *) received_cipher;
-		cout << "cipherlen uint8_t: " << (unsigned char *) received_len << endl;
-		size_t cipherlen = (size_t)received_len[0];
-		*/
-
-		/*Obtain base64-ed cipher text from received pointer*/
-		unsigned char *cipherb64 = (unsigned char *) received_cipher;
-		//cout << "Received base64-ed cipher is: " << endl;
-		//cout << cipherb64 << endl << endl;
-		
-		size_t cipherb64_len = strlen((char*)cipherb64);
-		cout << "Base64-ed cipher's length is: " << cipherb64_len << endl;
-
-		/*Next, obtain base64-ed IV*/
-		unsigned char *ivb64 = (unsigned char *) received_iv;
-		cout << "Received base64-ed IV is: " << endl;
-		cout << ivb64 << endl << endl;
-
-		/*Then obtain base64-ed MAC tag*/
-		unsigned char *tagb64 = (unsigned char *) received_tag;
-		cout << "Received base64-ed MAC tag is: " << endl;
-		cout << tagb64 << endl << endl;
-
-		size_t tagb64_len = strlen((char*)tagb64);
-		cout << "Base64-ed MAC tag's length is: " << tagb64_len << endl;
-
-
-		/*In addition to that, obtain base64-ed default cipher length*/
-		unsigned char *deflenb64 = (unsigned char *) received_deflen;
-
-		cout << "Received base64-ed default cipher length is: " << endl;
-		cout << deflenb64 << endl << endl;
-
-
-
-		int deflen, rettmp, deftaglen = 16;
-		uint8_t cipherb64lentmp[32] = {'\0'}, tagb64lentmp[32] = {'\0'};
-		uint8_t deflentmp[128] = {'\0'};
-		uint8_t deftaglentmp[32] = {'\0'};
-		uint8_t *cipher_to_enclave;
-		uint8_t iv_to_enclave[12];
-		uint8_t tag_to_enclave[16];
-
-		
-		/*Decrypt default cipher's length from base64*/
-		rettmp = base64_decrypt(deflenb64, recvdeflen, deflentmp, 32);
-		deflen = strtol((char*)deflentmp, NULL, 10);
-
-		cout << "Decrypted default cipher length is: " << deflen << endl;
-		cout << "rettmp: " << rettmp << endl;
-		
-
-		/*Decrypt cipher from base64*/
-		cipher_to_enclave = new uint8_t[cipherb64len];
-		int cipherlen;
-
-		cipherlen = base64_decrypt(cipherb64, cipherb64len, cipher_to_enclave, cipherb64len);
-
-		//cout << "Cipher length is: " << cipherlen << endl;
-		//cout << "Cipher decoded from base64 is: " << endl;
-		//BIO_dump_fp(stdout, (const char*)cipher_to_enclave, cipherlen);
-
-		/*Decrypt iv from base64*/
-		int ivlen;
-		uint8_t iv_tmp[32] = {'\0'};
-
-		ivlen = base64_decrypt(ivb64, ivb64len, iv_tmp, 32);
-		
-		cout << "IV length is (must be 12): " << ivlen << endl;
-		cout << "IV decoded from base64 is: " << endl;
-		BIO_dump_fp(stdout, (const char*)iv_tmp, ivlen);
-
-		for(int i = 0; i < 12; i++)
+		if(datatype == "vcf")
 		{
-			iv_to_enclave[i] = iv_tmp[i];
-		}
-
-		/*Decrypt tag from base64*/
-		int taglen;
-		uint8_t tag_tmp[32] = {'\0'};
-
-		taglen = base64_decrypt(tagb64, tagb64len, tag_tmp, 32);
-
-		cout << "Tag length is (must be 16, but maybe some offset): " << taglen << endl;
-		cout << "Tag decoded from base64 is: " << endl;
-		BIO_dump_fp(stdout, (const char*)tag_tmp, taglen);
-
-		for(int i = 0; i < 16; i++)
-		{
-			tag_to_enclave[i] = tag_tmp[i];
-		}
-
-		cout << "Execute ECALL with passing cipher data." << endl;
-
-		//uint8_t result_cipher[20000000] = {'\0'};
-		uint8_t *result_cipher;
-		size_t result_len = -9999;
-		sgx_status_t retval, ecall_status;
-
-
-		if(login_flag == 0)//Owner
-		{
-			size_t store_flag = 0;
-			result_cipher = new uint8_t[cipherlen + 1000];
-
-			try
-			{
-				OCALL_chrono_start();
-				ecall_status = seal_data(eid, &retval, g_ra_ctx, cipher_to_enclave, 
-				(size_t)deflen, iv_to_enclave, tag_to_enclave, result_cipher,
-				cipherlen + 1000, &result_len);
-
-				if(ecall_status != SGX_SUCCESS)
-				{
-					sgx_error_print(ecall_status);
-					store_flag = 1;
-				}
-
-				uint8_t *b64_to_store = new uint8_t[result_len * 2];
-				int b64_to_store_len;
-
-				b64_to_store_len = base64_encrypt(result_cipher, result_len,
-						b64_to_store, result_len * 2);
-
-				//OCALL_dump(b64_to_store, b64_to_store_len);
-
-				string string_to_store(reinterpret_cast<char*>(b64_to_store));
-
-				bdb.storeDB(string_to_store, datatype, result_len);
-	
-				OCALL_chrono_end();
-
-			}
-			catch(sql::SQLException &e)
-			{
-				cerr << "# ERR: SQLException in " << __FILE__ << " on line " << __LINE__ << endl;
-				cerr << "# ERR: " << e.what() << endl;
-				cerr << " (MySQL error code: " << e.getErrorCode();
-				cerr << ", SQLState: " << e.getSQLState() << ")" << endl;
-
-				store_flag = 1;
-			}
-
-			ecall_status = encrypt_store_status(eid, &retval, g_ra_ctx, store_flag, 
-				iv_to_enclave, tag_to_enclave, result_cipher, &result_len);
-
-		}
-		else if(login_flag == 1)//Researcher
-		{
-			result_cipher = new uint8_t[1000000];
-
-			ecall_status = run_interpreter(eid, &retval, g_ra_ctx,
-				cipher_to_enclave, (size_t)deflen, iv_to_enclave,
-				tag_to_enclave, result_cipher, &result_len);
 		}
 		else
 		{
-			//return password error
+			int rv;
+			size_t sz;
+			void **received_cipher;
+			void **received_iv;
+			void **received_tag;
+			void **received_deflen;
+			size_t cipherb64len, ivb64len, tagb64len, recvdeflen;
+
+			rv = msgio->read((void **) &received_iv, &sz);
+
+			if(rv == -1) {
+				eprintf("system error reading IV from SP\n");
+				return 0;
+			} else if ( rv == 0 ) {
+				eprintf("protocol error reading IV from SP\n");
+				return 0;
+			}
+
+			ivb64len = sz / 2;
+
+			
+			rv = msgio->read((void **) &received_tag, &sz);
+
+			if ( rv == -1 ) {
+				eprintf("system error reading MAC tag from SP\n");
+				return 0;
+			} else if ( rv == 0 ) {
+				eprintf("protocol error reading MAC tag from SP\n");
+				return 0;
+			}
+
+			tagb64len = sz / 2;
+
+			
+			rv = msgio->read((void **) &received_deflen, &sz);
+
+			if ( rv == -1 ) {
+				eprintf("system error reading default cipher length from SP\n");
+				return 0;
+			} else if ( rv == 0 ) {
+				eprintf("protocol error reading default cipher length from SP\n");
+				return 0;
+			}
+
+			recvdeflen = sz / 2;
+
+			rv = msgio->read_nd((void **) &received_cipher, &sz);
+
+			if ( rv == -1 ) {
+				eprintf("system error reading secret from SP\n");
+				return 0;
+			} else if ( rv == 0 ) {
+				eprintf("protocol error reading secret from SP\n");
+				return 0;
+			}
+
+			cipherb64len = sz;
+
+
+			/*
+			unsigned char *cipher_to_enclave = (unsigned char *) received_cipher;
+			cout << "cipherlen uint8_t: " << (unsigned char *) received_len << endl;
+			size_t cipherlen = (size_t)received_len[0];
+			*/
+
+			/*Obtain base64-ed cipher text from received pointer*/
+			unsigned char *cipherb64 = (unsigned char *) received_cipher;
+			//cout << "Received base64-ed cipher is: " << endl;
+			//cout << cipherb64 << endl << endl;
+			
+			size_t cipherb64_len = strlen((char*)cipherb64);
+			cout << "Base64-ed cipher's length is: " << cipherb64_len << endl;
+
+			/*Next, obtain base64-ed IV*/
+			unsigned char *ivb64 = (unsigned char *) received_iv;
+			cout << "Received base64-ed IV is: " << endl;
+			cout << ivb64 << endl << endl;
+
+			/*Then obtain base64-ed MAC tag*/
+			unsigned char *tagb64 = (unsigned char *) received_tag;
+			cout << "Received base64-ed MAC tag is: " << endl;
+			cout << tagb64 << endl << endl;
+
+			size_t tagb64_len = strlen((char*)tagb64);
+			cout << "Base64-ed MAC tag's length is: " << tagb64_len << endl;
+
+
+			/*In addition to that, obtain base64-ed default cipher length*/
+			unsigned char *deflenb64 = (unsigned char *) received_deflen;
+
+			cout << "Received base64-ed default cipher length is: " << endl;
+			cout << deflenb64 << endl << endl;
+
+
+
+			int deflen, rettmp, deftaglen = 16;
+			uint8_t cipherb64lentmp[32] = {'\0'}, tagb64lentmp[32] = {'\0'};
+			uint8_t deflentmp[128] = {'\0'};
+			uint8_t deftaglentmp[32] = {'\0'};
+			uint8_t *cipher_to_enclave;
+			uint8_t iv_to_enclave[12];
+			uint8_t tag_to_enclave[16];
+
+			
+			/*Decrypt default cipher's length from base64*/
+			rettmp = base64_decrypt(deflenb64, recvdeflen, deflentmp, 32);
+			deflen = strtol((char*)deflentmp, NULL, 10);
+
+			cout << "Decrypted default cipher length is: " << deflen << endl;
+			cout << "rettmp: " << rettmp << endl;
+			
+
+			/*Decrypt cipher from base64*/
+			cipher_to_enclave = new uint8_t[cipherb64len];
+			int cipherlen;
+
+			cipherlen = base64_decrypt(cipherb64, cipherb64len, cipher_to_enclave, cipherb64len);
+
+			//cout << "Cipher length is: " << cipherlen << endl;
+			//cout << "Cipher decoded from base64 is: " << endl;
+			//BIO_dump_fp(stdout, (const char*)cipher_to_enclave, cipherlen);
+
+			/*Decrypt iv from base64*/
+			int ivlen;
+			uint8_t iv_tmp[32] = {'\0'};
+
+			ivlen = base64_decrypt(ivb64, ivb64len, iv_tmp, 32);
+			
+			cout << "IV length is (must be 12): " << ivlen << endl;
+			cout << "IV decoded from base64 is: " << endl;
+			BIO_dump_fp(stdout, (const char*)iv_tmp, ivlen);
+
+			for(int i = 0; i < 12; i++)
+			{
+				iv_to_enclave[i] = iv_tmp[i];
+			}
+
+			/*Decrypt tag from base64*/
+			int taglen;
+			uint8_t tag_tmp[32] = {'\0'};
+
+			taglen = base64_decrypt(tagb64, tagb64len, tag_tmp, 32);
+
+			cout << "Tag length is (must be 16, but maybe some offset): " << taglen << endl;
+			cout << "Tag decoded from base64 is: " << endl;
+			BIO_dump_fp(stdout, (const char*)tag_tmp, taglen);
+
+			for(int i = 0; i < 16; i++)
+			{
+				tag_to_enclave[i] = tag_tmp[i];
+			}
+
+			cout << "Execute ECALL with passing cipher data." << endl;
+
+			//uint8_t result_cipher[20000000] = {'\0'};
+			uint8_t *result_cipher;
+			size_t result_len = -9999;
+			sgx_status_t retval, ecall_status;
+
+
+			if(login_flag == 0)//Owner
+			{
+				size_t store_flag = 0;
+				result_cipher = new uint8_t[cipherlen + 1000];
+
+				try
+				{
+					OCALL_chrono_start();
+					ecall_status = seal_data(eid, &retval, g_ra_ctx, cipher_to_enclave, 
+					(size_t)deflen, iv_to_enclave, tag_to_enclave, result_cipher,
+					cipherlen + 1000, &result_len);
+
+					if(ecall_status != SGX_SUCCESS)
+					{
+						sgx_error_print(ecall_status);
+						store_flag = 1;
+					}
+
+					uint8_t *b64_to_store = new uint8_t[result_len * 2];
+					int b64_to_store_len;
+
+					b64_to_store_len = base64_encrypt(result_cipher, result_len,
+							b64_to_store, result_len * 2);
+
+					//OCALL_dump(b64_to_store, b64_to_store_len);
+
+					string string_to_store(reinterpret_cast<char*>(b64_to_store));
+
+					bdb.storeDB(string_to_store, datatype, result_len);
+		
+					OCALL_chrono_end();
+
+				}
+				catch(sql::SQLException &e)
+				{
+					cerr << "# ERR: SQLException in " << __FILE__ << " on line " << __LINE__ << endl;
+					cerr << "# ERR: " << e.what() << endl;
+					cerr << " (MySQL error code: " << e.getErrorCode();
+					cerr << ", SQLState: " << e.getSQLState() << ")" << endl;
+
+					store_flag = 1;
+				}
+
+				ecall_status = encrypt_store_status(eid, &retval, g_ra_ctx, store_flag, 
+					iv_to_enclave, tag_to_enclave, result_cipher, &result_len);
+
+			}
+			else if(login_flag == 1)//Researcher
+			{
+				result_cipher = new uint8_t[1000000];
+
+				ecall_status = run_interpreter(eid, &retval, g_ra_ctx,
+					cipher_to_enclave, (size_t)deflen, iv_to_enclave,
+					tag_to_enclave, result_cipher, &result_len);
+			}
+			else
+			{
+				//return password error
+			}
+			
+			if(ecall_status != SGX_SUCCESS)
+			{
+				sgx_error_print(ecall_status);
+			}
+
+			cout << "\nExited ECALL successfully. Check the returned data." << endl;
+			cout << "Result from enclave: " << dec << result_len << endl << endl;
+
+			cout << "Cipher: " << endl;
+			BIO_dump_fp(stdout, (const char*)result_cipher, result_len);
+
+			cout << "\nIV: " << endl;
+			BIO_dump_fp(stdout, (const char*)iv_to_enclave, 12);
+
+			cout << "\nTag: " << endl;
+			BIO_dump_fp(stdout, (const char*)tag_to_enclave, 16);
+
+
+			/*Convert result contexts to base64 format*/
+			uint8_t* res_cipherb64 = new uint8_t[result_len * 2];
+			uint8_t res_ivb64[64] = {'\0'};
+			uint8_t res_tagb64[64] = {'\0'};
+			uint8_t res_deflenb64[128] = {'\0'};
+			int res_cipherb64_len, res_ivb64_len, res_tagb64_len, res_deflenb64_len;
+
+			/*Encode result cipher*/
+			res_cipherb64_len = base64_encrypt(result_cipher, result_len,
+						res_cipherb64, result_len * 2);
+
+			/*Encode result IV*/
+			res_ivb64_len = base64_encrypt(iv_to_enclave, 12, res_ivb64, 64);
+
+			/*Encode result MAC tag*/
+			res_tagb64_len = base64_encrypt(tag_to_enclave, 16, res_tagb64, 64);
+
+			/*Encode result cipher's length*/
+			uint8_t *resdeflentmp = 
+				const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(to_string(result_len).c_str()));
+
+			res_deflenb64_len = 
+				base64_encrypt(resdeflentmp, strlen((char*)resdeflentmp), res_deflenb64, 128);
+
+
+			/*Base64 value check*/
+			cout << "========================================================================" << endl;
+			cout << "result cipher in base64: " << endl;
+			cout << res_cipherb64 << endl;
+			cout << "========================================================================" << endl;
+			cout << "result IV in base64: " << endl;
+			cout << res_ivb64 << endl;
+			cout << "========================================================================" << endl;
+			cout << "result tag in base64: " << endl;
+			cout << res_tagb64 << endl;
+			cout << "========================================================================" << endl;
+			cout << "result cipher's length in base64" << endl;
+			cout << res_deflenb64 << endl;
+			cout << "========================================================================" << endl;
+			cout << endl;
+
+			/*send base64-ed result cipher to SP*/
+			cout << "========================================================================" << endl;
+			cout << "Send encrypted result to SP." << endl;
+			
+			cout << "Encrypted result to be sent is: " << endl;
+			msgio->send(res_cipherb64, strlen((char*)res_cipherb64));
+
+			cout << "Complete sending message." << endl;
+			cout << "Please wait for 0.25 sec." << endl;
+			cout << "========================================================================" << endl;
+
+			usleep(250000);
+
+			/*send base64-ed IV to SP*/
+			cout << "IV to be sent is: " << endl;
+			msgio->send(res_ivb64, strlen((char*)res_ivb64));
+
+			cout << "Complete sending message." << endl;
+			cout << "Please wait for 0.25 sec." << endl;
+			cout << "========================================================================" << endl;
+			
+			usleep(250000);
+
+			/*send base64-ed MAC tag to SP*/
+			cout << "Tag to be sent is: " << endl;
+			msgio->send(res_tagb64, strlen((char*)res_tagb64));
+
+			cout << "Complete sending message." << endl;
+			cout << "Please wait for 0.25 sec." << endl;
+			cout << "========================================================================" << endl;
+
+			usleep(250000);
+
+			/*send base64-ed result cipher length to SP*/
+			cout << "Result cipher's length to be sent is: " << endl;
+			msgio->send(res_deflenb64, strlen((char*)res_deflenb64));
+
+			cout << "Complete sending message." << endl;
+			cout << "Please wait for 0.25 sec." << endl;
+			cout << "========================================================================" << endl;
+			
+			cout << "Complete sending result contexts to SP." << endl << endl;
+			//enclave_ra_close(eid, &g_sgxrv, g_ra_ctx);
 		}
-		
-		if(ecall_status != SGX_SUCCESS)
-		{
-			sgx_error_print(ecall_status);
-		}
-
-		cout << "\nExited ECALL successfully. Check the returned data." << endl;
-		cout << "Result from enclave: " << dec << result_len << endl << endl;
-
-		cout << "Cipher: " << endl;
-		BIO_dump_fp(stdout, (const char*)result_cipher, result_len);
-
-		cout << "\nIV: " << endl;
-		BIO_dump_fp(stdout, (const char*)iv_to_enclave, 12);
-
-		cout << "\nTag: " << endl;
-		BIO_dump_fp(stdout, (const char*)tag_to_enclave, 16);
-
-
-		/*Convert result contexts to base64 format*/
-		uint8_t* res_cipherb64 = new uint8_t[result_len * 2];
-		uint8_t res_ivb64[64] = {'\0'};
-		uint8_t res_tagb64[64] = {'\0'};
-		uint8_t res_deflenb64[128] = {'\0'};
-		int res_cipherb64_len, res_ivb64_len, res_tagb64_len, res_deflenb64_len;
-
-		/*Encode result cipher*/
-		res_cipherb64_len = base64_encrypt(result_cipher, result_len,
-					res_cipherb64, result_len * 2);
-
-		/*Encode result IV*/
-		res_ivb64_len = base64_encrypt(iv_to_enclave, 12, res_ivb64, 64);
-
-		/*Encode result MAC tag*/
-		res_tagb64_len = base64_encrypt(tag_to_enclave, 16, res_tagb64, 64);
-
-		/*Encode result cipher's length*/
-		uint8_t *resdeflentmp = 
-			const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(to_string(result_len).c_str()));
-
-		res_deflenb64_len = 
-			base64_encrypt(resdeflentmp, strlen((char*)resdeflentmp), res_deflenb64, 128);
-
-
-		/*Base64 value check*/
-		cout << "========================================================================" << endl;
-		cout << "result cipher in base64: " << endl;
-		cout << res_cipherb64 << endl;
-		cout << "========================================================================" << endl;
-		cout << "result IV in base64: " << endl;
-		cout << res_ivb64 << endl;
-		cout << "========================================================================" << endl;
-		cout << "result tag in base64: " << endl;
-		cout << res_tagb64 << endl;
-		cout << "========================================================================" << endl;
-		cout << "result cipher's length in base64" << endl;
-		cout << res_deflenb64 << endl;
-		cout << "========================================================================" << endl;
-		cout << endl;
-
-		/*send base64-ed result cipher to SP*/
-		cout << "========================================================================" << endl;
-		cout << "Send encrypted result to SP." << endl;
-		
-		cout << "Encrypted result to be sent is: " << endl;
-		msgio->send(res_cipherb64, strlen((char*)res_cipherb64));
-
-		cout << "Complete sending message." << endl;
-		cout << "Please wait for 0.25 sec." << endl;
-		cout << "========================================================================" << endl;
-
-		usleep(250000);
-
-		/*send base64-ed IV to SP*/
-		cout << "IV to be sent is: " << endl;
-		msgio->send(res_ivb64, strlen((char*)res_ivb64));
-
-		cout << "Complete sending message." << endl;
-		cout << "Please wait for 0.25 sec." << endl;
-		cout << "========================================================================" << endl;
-		
-		usleep(250000);
-
-		/*send base64-ed MAC tag to SP*/
-		cout << "Tag to be sent is: " << endl;
-		msgio->send(res_tagb64, strlen((char*)res_tagb64));
-
-		cout << "Complete sending message." << endl;
-		cout << "Please wait for 0.25 sec." << endl;
-		cout << "========================================================================" << endl;
-
-		usleep(250000);
-
-		/*send base64-ed result cipher length to SP*/
-		cout << "Result cipher's length to be sent is: " << endl;
-		msgio->send(res_deflenb64, strlen((char*)res_deflenb64));
-
-		cout << "Complete sending message." << endl;
-		cout << "Please wait for 0.25 sec." << endl;
-		cout << "========================================================================" << endl;
-		
-		cout << "Complete sending result contexts to SP." << endl << endl;
-		//enclave_ra_close(eid, &g_sgxrv, g_ra_ctx);
 	}
-
 	enclave_ra_close(eid, &g_sgxrv, g_ra_ctx);
      
 	close_logfile(fplog);
