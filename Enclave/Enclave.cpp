@@ -734,3 +734,72 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_ciphe
 
 	return SGX_SUCCESS;
 }
+
+
+sgx_status_t process_extract_filename(sgx_ra_context_t context, 
+	uint8_t *vctx_cipher, size_t vctx_cipherlen, uint8_t *vctx_iv,
+	uint8_t *vctx_tag, uint8_t *filename)
+{
+	sgx_status_t status = SGX_SUCCESS;
+	sgx_ec_key_128bit_t sk_key;
+	
+	/*Get session key SK to decrypt secret*/
+	status = sgx_ra_get_keys(context, SGX_RA_KEY_SK, &sk_key);
+
+	if(status != SGX_SUCCESS)
+	{
+		const char* message = "Error while obtaining session key.";
+		OCALL_print(message);
+		OCALL_print_status(status);
+		return status;
+	}
+	
+	uint32_t p_iv_len = 12;
+	uint8_t *vcf_context = new uint8_t[vctx_cipherlen + 16]();
+	
+	sgx_aes_gcm_128bit_tag_t tag_t;
+	uint8_t *iv_t = new uint8_t[p_iv_len];
+
+
+	for(int i = 0; i < 16; i++)
+	{
+		tag_t[i] = vctx_tag[i];
+	}
+
+	for(int i = 0; i < p_iv_len; i++)
+	{
+		iv_t[i] = vctx_iv[i];
+	}
+
+
+	status = sgx_rijndael128GCM_decrypt(&sk_key, vctx_cipher,
+		vctx_cipherlen, vcf_context, iv_t, p_iv_len, NULL, 0, &tag_t);
+
+
+	if(status != SGX_SUCCESS)
+	{
+		const char* message = "Error while decrypting SP's secret.";
+		OCALL_print(message);
+		OCALL_print_status(status);
+		return status;
+	}
+
+	
+	char *token_div;
+
+	token_div = strtok((char*)vcf_context, "\n"); //discard username
+	token_div = strtok(NULL, "\n"); //and disease_type
+	token_div = strtok(NULL, "\n"); //then get filename
+
+	
+
+	for(int i = 0; i < 16; i++)
+	{
+		filename[i] = (uint8_t)token_div[i];
+	}
+	
+
+	delete(vcf_context);
+
+	return SGX_SUCCESS;
+}

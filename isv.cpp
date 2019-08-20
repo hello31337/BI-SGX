@@ -82,6 +82,7 @@ using namespace std;
 #include <cppconn/prepared_statement.h>
 
 #define MAX_LEN 80
+#define ROUND_UNIT 100000000
 
 #ifdef _WIN32
 # define strdup(x) _strdup(x)
@@ -961,6 +962,27 @@ int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb, 
 	}
 }
 
+
+void msgio_read_error_check(int rv, string str)
+{
+	if(rv == -1)
+	{
+		string emsg = "system error reading ";
+		emsg += str;
+		emsg += " from ISV\n";
+
+		eprintf(emsg.c_str());
+	}
+	else if(rv == 0)
+	{
+		string emsg = "protocol error reading ";
+		emsg += str;
+		emsg += " from ISV\n";
+
+		eprintf(emsg.c_str());
+	}
+}
+
 int main (int argc, char *argv[])
 {
 	config_t config;
@@ -1298,6 +1320,339 @@ int main (int argc, char *argv[])
 		
 		if(datatype == "vcf")
 		{
+			int rv;
+			size_t sz;
+			void **received_vctx;
+			void **received_iv_vctx;
+			void **received_tag_vctx;
+			void **received_deflen_vctx;
+			size_t vctx_b64len, vctx_iv_b64len;
+			size_t vctx_tag_b64len, vctx_deflen_b64len;
+
+			uint8_t *uchar_vctx_b64;
+			uint8_t *uchar_iv_vctx_b64;
+			uint8_t *uchar_tag_vctx_b64;
+			uint8_t *uchar_deflen_vctx_b64;
+			uint8_t *void_to_uchar;
+
+			rv = msgio->read_nd((void **) &received_vctx, &sz);
+			vctx_b64len = sz;
+
+			if(rv != 1)
+			{
+				msgio_read_error_check(rv, "secret");
+				return -1;
+			}
+
+			uchar_vctx_b64 = new uint8_t[sz + 1]();
+			void_to_uchar = (uint8_t*)received_vctx;
+
+			for(int i = 0; i < sz; i++)
+			{
+				uchar_vctx_b64[i] = void_to_uchar[i];
+			}
+
+
+
+			rv = msgio->read_nd((void **) &received_iv_vctx, &sz);
+			vctx_iv_b64len = sz;
+
+			if(rv != 1)
+			{
+				msgio_read_error_check(rv, "IV");
+				return -1;
+			}
+
+			uchar_iv_vctx_b64 = new uint8_t[sz + 1]();
+			void_to_uchar = (uint8_t*)received_iv_vctx;
+
+			for(int i = 0; i < sz; i++)
+			{
+				uchar_iv_vctx_b64[i] = void_to_uchar[i];
+			}
+
+
+
+
+			rv = msgio->read_nd((void **) &received_tag_vctx, &sz);
+			vctx_tag_b64len = sz;
+
+			if(rv != 1)
+			{
+				msgio_read_error_check(rv, "MAC tag");
+				return -1;
+			}
+
+			uchar_tag_vctx_b64 = new uint8_t[sz + 1]();
+			void_to_uchar = (uint8_t*)received_tag_vctx;
+			
+			for(int i = 0; i < sz; i++)
+			{
+				uchar_tag_vctx_b64[i] = void_to_uchar[i];
+			}
+
+
+
+
+			rv = msgio->read_nd((void **) &received_deflen_vctx, &sz);
+			vctx_deflen_b64len = sz;
+
+			if(rv != 1)
+			{
+				msgio_read_error_check(rv, "default cipher length");
+				return -1;
+			}
+
+			uchar_deflen_vctx_b64 = new uint8_t[sz + 1]();
+			void_to_uchar = (uint8_t*)received_deflen_vctx;
+
+			for(int i = 0; i < sz; i++)
+			{
+				uchar_deflen_vctx_b64[i] = void_to_uchar[i];
+			}
+
+			
+
+			cout << "IVb64:" << endl;
+			cout << uchar_iv_vctx_b64 << endl;
+
+			cout << "Tagb64:" << endl;
+			cout << uchar_tag_vctx_b64 << endl;
+
+			cout << "deflenb64:" << endl;
+			cout << uchar_deflen_vctx_b64 << endl;
+
+			cout << "vctxb64:" << endl;
+			cout << uchar_vctx_b64 << endl;
+
+			/* allocate heap excessively to avoid error with
+			*  base64 function
+			*/
+			int vctx_deflen, rettmp;
+			uint8_t *vctx_cipher;
+			uint8_t *iv_vctx = new uint8_t[32]();
+			uint8_t *tag_vctx = new uint8_t[32]();
+			uint8_t *deflen_vctx_tmp = new uint8_t[128]();
+
+
+			/* VCF context cipher length */
+			rettmp = base64_decrypt(uchar_deflen_vctx_b64,
+				vctx_deflen_b64len, deflen_vctx_tmp, 128);
+
+			vctx_deflen = strtol((char*)deflen_vctx_tmp, NULL, 10);
+
+
+			/* VCF context cipher */
+			vctx_cipher = new uint8_t[vctx_deflen + 16]();
+
+			rettmp = base64_decrypt(uchar_vctx_b64,
+				vctx_b64len, vctx_cipher, vctx_deflen + 16);
+
+
+			/* IV for VCF context cipher */
+			rettmp = base64_decrypt(uchar_iv_vctx_b64, 
+				vctx_iv_b64len, iv_vctx, 32);
+
+
+			/* MAC tag for VCF context cipher*/
+			rettmp = base64_decrypt(uchar_tag_vctx_b64,
+				vctx_tag_b64len, tag_vctx, 32);
+
+
+			
+			cout << "deflen: " << vctx_deflen << endl;
+			
+			cout << "IV: " << endl;
+			OCALL_dump(iv_vctx, 12);
+
+			cout << "tag: " << endl;
+			OCALL_dump(tag_vctx, 16);
+
+			cout << "vctx cipher: " << endl;
+			OCALL_dump(vctx_cipher, vctx_deflen);
+
+
+			sgx_status_t retval;
+			uint8_t *tar_filename = new uint8_t[16 + 1]();
+
+			cout << "\nEnter enclave to extract given tar filename." << endl;
+
+			sgx_status_t vst = process_extract_filename(eid, &retval, 
+				g_ra_ctx, vctx_cipher, vctx_deflen, iv_vctx, tag_vctx, 
+				tar_filename);
+
+
+			/* create directory to store tarball */
+			string mkdir_cmd = "mkdir -p encrypted_vcf/";
+			mkdir_cmd += (char*)tar_filename;
+
+			int sys_ret = system(mkdir_cmd.c_str());
+
+			if(!WIFEXITED(sys_ret))
+			{
+				cerr << "Failed to create directory for tarball." << endl;
+				return -1;
+			}
+
+			/*
+			string tar_filename_str = "encrypted_vcf/";
+			tar_filename_str += (char*)tar_filename;
+			tar_filename_str += '/';
+			*/
+			string tar_filename_str = (char*)tar_filename;
+			tar_filename_str += ".tar";
+
+			cout << "Obtained filename: " << tar_filename_str << endl;
+
+			ofstream tar_ofs(tar_filename_str, ios::app | ios::binary);
+
+			if(!tar_ofs)
+			{
+				cerr << "Failed to open tarfile to write." << endl;
+				return -1;
+			}
+
+			
+			void **received_tarsize;
+			uint64_t tarball_size = 0;
+
+			rv = msgio->read_nd((void **) &received_tarsize, &sz);
+
+			if(rv != 1)
+			{
+				msgio_read_error_check(rv, "tarball size");
+				return -1;
+			}
+
+
+			tarball_size = strtol((char*)received_tarsize, NULL, 10);
+
+			cout << "tarball size: " << tarball_size << endl;
+
+
+			int round_num = tarball_size / ROUND_UNIT;
+
+			if(tarball_size % ROUND_UNIT != 0)
+			{
+				round_num++;
+			}
+
+
+			for(int i = 0; i < round_num; i++)
+			{
+				void **received_tar;
+				uint8_t *tar_binary;
+				uint64_t tar_length;
+
+				rv = msgio->read_nd((void**) &received_tar, &sz);
+
+				if(rv != 1)
+				{
+					msgio_read_error_check(rv, "tarball");
+					return -1;
+				}
+
+				tar_binary = new uint8_t[sz]();
+
+				tar_length = base64_decrypt((uint8_t*)received_tar,
+					sz, tar_binary, sz);
+
+				
+				if(tar_length >= ROUND_UNIT)
+				{
+					tar_ofs.write((char*)tar_binary, ROUND_UNIT);
+				}
+				else
+				{
+					tar_ofs.write((char*)tar_binary,
+						tarball_size % ROUND_UNIT);
+				}
+	
+				/*
+				if(tar_length > ROUND_UNIT)
+				{
+					cerr << "Fatal error with file output." << endl;
+					cerr << tar_length << endl;
+					return -1;
+				}
+				*/
+
+				if(!tar_ofs)
+				{
+					cerr << "Failed to write tarball." << endl;
+					return -1;
+				}
+
+			}
+
+			
+			
+			/* receive arrays of IV and MAC tags */
+			void **received_iv_array;
+			void **received_tag_array;
+			int iv_array_length, tag_array_length;
+
+			rv = msgio->read_nd((void**)&received_iv_array, &sz);
+
+			if(rv != 1)
+			{
+				msgio_read_error_check(rv, "IV array");
+				return -1;
+			}
+
+			iv_array_length = sz;
+
+
+			rv = msgio->read_nd((void**)&received_tag_array, &sz);
+
+			if(rv != 1)
+			{
+				msgio_read_error_check(rv, "MAC tag array");
+				return -1;
+			}
+
+			tag_array_length = sz;
+
+
+
+			/* extract data from tarball */
+			string tar_cmd = "tar -xf " + string((char*)tar_filename);
+			tar_cmd += ".tar";
+
+			sys_ret = system(tar_cmd.c_str());
+
+			if(!WIFEXITED(sys_ret))
+			{
+				cerr << "Failed to extract secret from tarball." << endl;
+				return -1;
+			}
+			
+
+
+			string rm_cmd = "rm -f " + string((char*)tar_filename);
+			rm_cmd += ".tar";
+
+			sys_ret = system(rm_cmd.c_str());
+
+			if(!WIFEXITED(sys_ret))
+			{
+				cerr << "Failed to delete unnecessary tarball." << endl;
+				cerr << "Please delete it manually." << endl;
+			}
+
+
+
+			/* register vcf contexts */
+
+
+			/* seal session key and store */
+
+			/* destruct heaps */
+			delete(tar_filename);
+			delete(vctx_cipher);
+			delete(iv_vctx);
+			delete(tag_vctx);
+			delete(vctx_cipher);
 		}
 		else
 		{

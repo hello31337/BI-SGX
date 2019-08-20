@@ -71,6 +71,8 @@ using namespace std;
 #define strdup(x) _strdup(x)
 #endif
 
+#define ROUND_UNIT 100000000
+
 static const unsigned char def_service_private_key[32] = {
 	0x90, 0xe7, 0x6c, 0xbb, 0x2d, 0x52, 0xa1, 0xce,
 	0x3b, 0x66, 0xde, 0x11, 0x43, 0x9c, 0x87, 0xec,
@@ -150,7 +152,8 @@ string generate_random_filename();
 int send_login_info(MsgIO *msgio, ra_session_t session, 
 	string *username, string *datatype);
 
-int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key);
+int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key,
+	uint8_t *iv_array, uint8_t *tag_array, ifstream *vcf_ifs);
 
 chrono::system_clock::time_point chrono_start, chrono_end;
 
@@ -779,17 +782,70 @@ int main(int argc, char *argv[])
             {
                 /* process VCF file to send */
                 int div_total = 0;
+				uint8_t *iv_array, *tag_array;
 
-                div_total = process_vcf(&tar_filename,
-                    &access_list, sp_key);
+				string vcf_filename;
+
+				cout << "Input filename of vcf to send: ";
+				cin >> vcf_filename;
+				cout << endl;
+
+				ifstream vcf_ifs(vcf_filename, ios::in);
 
 
+				while(!vcf_ifs)
+				{
+					cerr << "Failed to open " << vcf_filename << "." << endl;
+					cerr << "Input appropriate filename: ";
+
+					cin >> vcf_filename;
+					cout << endl;
+
+					vcf_ifs.open(vcf_filename, ios::in);
+				}
+
+				size_t divnum = 0;
+				vcf_ifs.seekg(0, ios::end);
+				divnum = vcf_ifs.tellg();
+				vcf_ifs.seekg(0, ios::beg);
+
+				if(divnum % 20000000 != 0)
+				{
+					divnum /= 20000000;
+					divnum += 1;
+				}
+				else
+				{
+					divnum /= 20000000;
+				}
+
+
+				iv_array = new uint8_t[12 * divnum]();
+				tag_array = new uint8_t[16 * divnum]();
+
+
+                div_total = process_vcf(&tar_filename, &access_list, 
+					sp_key, iv_array, tag_array, &vcf_ifs);
+
+
+				/* remove temporary directory */
+				string rm_cmd = "rm -rf encrypted_vcf/" + tar_filename;
+
+				int sys_ret = system(rm_cmd.c_str());
+
+				if(!WIFEXITED(sys_ret))
+				{
+					cerr << "Failed to create temporary directory." << endl;
+					return -1;
+				}
+
+				
                 if(div_total == -1)
                 {
                     return -1;
                 }
 
-                string wht_filename, whitelist, wht_tmp, disease_type;
+                string wht_filename, whitelist, wht_tmp, attribution;
 
                 cout << "\nInput filename of whitelist: ";
                 cin >> wht_filename;
@@ -800,7 +856,7 @@ int main(int argc, char *argv[])
                 while(!wht_ifs)
                 {
                     cout << "Failed to open whitelist file." << endl;
-                    cout << "Unput filename of whitelist appropriately: ";
+                    cout << "Input filename of whitelist appropriately: ";
                     cin >> wht_filename;
                     cout << "\n" << endl;
 					 wht_ifs.open(wht_filename);
@@ -816,12 +872,13 @@ int main(int argc, char *argv[])
                 whitelist.pop_back();
 
 
-                cout << "Input disease type of this VCF file: ";
-                cin >> disease_type;
+                cout << "Input attribution of this VCF file ";
+				cout << "(nation, disease type, etc.)" << endl;
+                cin >> attribution;
 				string vcf_context = "";
 
                 vcf_context += whitelist + '\n';
-                vcf_context += disease_type + '\n';
+                vcf_context += attribution + '\n';
                 vcf_context += tar_filename + '\n';
                 vcf_context += username + '\n';
                 vcf_context += to_string(div_total);
@@ -831,7 +888,7 @@ int main(int argc, char *argv[])
 
                 uint8_t *iv_vctx = new uint8_t[12]();
                 uint8_t *tag_vctx = new uint8_t[16]();
-                uint8_t *vctx_cipher = new uint8_t[vcf_context.length()];
+                uint8_t *vctx_cipher = new uint8_t[vcf_context.length()]();
 				uint8_t *vctxb64 = new uint8_t[vcf_context.length() * 2]();
                 int vctx_cipher_length = 0;
 				int vctxb64_len = 0;
@@ -839,10 +896,15 @@ int main(int argc, char *argv[])
 				/* encrypt VCF contexts */
 				iv_vctx = generate_nonce(12);
 
-                int vcfctx_cipher_length = encrypt_data_for_ISV(vcf_uctx,
+                vctx_cipher_length = encrypt_data_for_ISV(vcf_uctx,
                     strlen((char*)vcf_uctx), sp_key, iv_vctx,
                     vctx_cipher, tag_vctx);
 
+				cout << vctx_cipher_length << endl;
+				BIO_dump_fp(stdout, (char*)vctx_cipher, vcf_context.length());
+				BIO_dump_fp(stdout, (char*)iv_vctx, 12);
+				BIO_dump_fp(stdout, (char*)tag_vctx, 16);
+				
 
 				/* encode VCF contexts to base64 */
                 vctxb64_len = base64_encrypt(vctx_cipher, vctx_cipher_length,
@@ -851,6 +913,7 @@ int main(int argc, char *argv[])
 
 				uint8_t *vctxlen_char = 
 					(uint8_t*)to_string(vctx_cipher_length).c_str();
+
 
 				uint8_t *iv_vctxb64 = new uint8_t[24]();
 				uint8_t *tag_vctxb64 = new uint8_t[32]();
@@ -863,6 +926,19 @@ int main(int argc, char *argv[])
 					16, tag_vctxb64, 32);
 				deflen_vctxb64_len = base64_encrypt(vctxlen_char, 
 					strlen((char*)vctxlen_char), deflen_vctxb64, 64);
+				
+				
+				cout << "IVb64:" << endl;
+				cout << iv_vctxb64 << endl;
+
+				cout << "\nTagb64:" << endl;
+				cout << tag_vctxb64 << endl;
+
+				cout << "\ndeflenb64:" << endl;
+				cout << deflen_vctxb64 << endl;
+
+				cout << "\nvctxb64:" << endl;
+				cout << vctxb64 << endl;
 
 				/* send VCF contexts */
 				cout << "\nSend VCF contexts to ISV..." << endl;
@@ -886,7 +962,7 @@ int main(int argc, char *argv[])
 				delete(deflen_vctxb64);
 
                 /* Open tarball */
-                string tarball_name = tar_filename + ".tar";
+                string tarball_name = "/tmp/" + tar_filename + ".tar";
                 ifstream tar_ifs(tarball_name, ios::in | ios::binary);
 
 
@@ -901,14 +977,13 @@ int main(int argc, char *argv[])
                 uint64_t tarball_size = tar_ifs.tellg();
                 tar_ifs.seekg(0, ios::beg);
 
-                int round_num = tarball_size / 10000000;
+                int round_num = tarball_size / ROUND_UNIT;
 
-                if(round_num != 0)
+                if(tarball_size % ROUND_UNIT != 0)
                 {
                     round_num++;
                 }
 
-				
 
 
 				/* Send size of tarball */
@@ -928,11 +1003,11 @@ int main(int argc, char *argv[])
 
                     if(i == round_num - 1)
                     {
-                        process_length = tarball_size % 10000000;
+                        process_length = tarball_size % ROUND_UNIT;
                     }
                     else
                     {
-                        process_length = 10000000;
+                        process_length = ROUND_UNIT;
                     }
 
 
@@ -949,7 +1024,44 @@ int main(int argc, char *argv[])
 
                     /* send partial base64-ed encrypted VCF */
                     msgio->send_nd(tar_b64, tar_b64len);
+
+					delete(tar_uint8t);
+					delete(tar_b64);
                 }
+
+
+				/* encode iv_array and tag_array to base64 */
+				uint8_t *iv_array_b64 = new uint8_t[12 * divnum * 2]();
+				uint8_t *tag_array_b64 = new uint8_t[16 * divnum * 2]();
+				int iv_array_b64len, tag_array_b64len;
+
+				iv_array_b64len = base64_encrypt(iv_array, 12 * divnum,
+					iv_array_b64, 12 * divnum * 2);
+
+				tag_array_b64len = base64_encrypt(tag_array, 16 * divnum,
+					tag_array_b64, 16 * divnum * 2);
+
+
+				/* send IVs and tags */
+				msgio->send_nd(iv_array_b64, iv_array_b64len);
+				msgio->send_nd(tag_array_b64, tag_array_b64len);
+
+				delete(iv_array_b64);
+				delete(tag_array_b64);
+
+
+
+				/* remove tarball which has been already sent */
+				rm_cmd = "rm -rf /tmp/" + tar_filename + ".tar";
+
+				sys_ret = system(rm_cmd.c_str());
+
+				if(!WIFEXITED(sys_ret))
+				{
+					cerr << "Failed to create temporary directory." << endl;
+					return -1;
+				}
+
 			}
 			else
 			{
@@ -2677,32 +2789,13 @@ int send_login_info(MsgIO *msgio, ra_session_t session,
 }
 
 
-int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key)
+int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key, 
+	uint8_t *iv_array, uint8_t *tag_array, ifstream *vcf_ifs)
 {
-    string vcf_filename;
-
-    cout << "Input filename of vcf to send: ";
-    cin >> vcf_filename;
-    cout << endl;
-
-    ifstream vcf_ifs(vcf_filename, ios::in);
-
-
-    while(!vcf_ifs)
-    {
-        cerr << "Failed to open " << vcf_filename << "." << endl;
-        cerr << "Input appropriate filename: ";
-
-        cin >> vcf_filename;
-        cout << endl;
-
-        vcf_ifs.open(vcf_filename, ios::in);
-    }
-
     size_t divnum = 0;
-    vcf_ifs.seekg(0, ios::end);
-    divnum = vcf_ifs.tellg();
-    vcf_ifs.seekg(0, ios::beg);
+    vcf_ifs->seekg(0, ios::end);
+    divnum = vcf_ifs->tellg();
+    vcf_ifs->seekg(0, ios::beg);
 
     if(divnum % 20000000 != 0)
     {
@@ -2731,9 +2824,7 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key)
     int divided_total = 0;
     int part_size = 0;
     string vcf_line, divided_vcf;
-    uint8_t *iv_array = new uint8_t[12 * divnum]();
-    uint8_t *tag_array = new uint8_t[16 * divnum]();
-
+    
     string divided_filename = "encrypted_vcf/";
     divided_filename += *tar_filename;
     divided_filename += "/";
@@ -2744,7 +2835,7 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key)
     ofstream div_ofs(divided_filename, ios::out | ios::binary);
 
 
-    while(getline(vcf_ifs, vcf_line))
+    while(getline(*vcf_ifs, vcf_line))
     {
         divided_vcf += vcf_line + '\n';
         part_size += vcf_line.length();
@@ -2757,6 +2848,7 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key)
             int vcf_cipher_len = 0;
 
             iv_temp = generate_nonce(12);
+
 
             for(int i = 0; i < 12; i++)
             {
@@ -2774,7 +2866,7 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key)
             div_ofs.write((char*)vcf_cipher, vcf_cipher_len);
 
 			cout << "Processed " << divided_filename << " successfully.\n";
-			
+		
             divided_vcf = "";
             part_size = 0;
 
@@ -2830,6 +2922,8 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key)
 
 	div_ofs.write((char*)vcf_cipher, vcf_cipher_len);
 
+	cout << "Processed " << divided_filename << " successfully.\n";
+
 	divided_vcf = "";
 	part_size = 0;
 
@@ -2838,7 +2932,7 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key)
 	div_ofs.close();
 
 
-	string tar_cmd = "tar --remove-files -cvf ";
+	string tar_cmd = "tar --remove-files -cvf /tmp/";
 	tar_cmd += *tar_filename;
 	tar_cmd += ".tar ";
 	tar_cmd += "encrypted_vcf/";
@@ -2851,6 +2945,11 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key)
 		cerr << "Failed to generate tarball." << endl;
 		return -1;
 	}
+
+	delete(iv_temp);
+	delete(tag_temp);
+	delete(vcf_cipher);
+
 
 	return divided_total;
 }

@@ -346,6 +346,8 @@ int MsgIO::read_nd(void **dest, size_t *sz) //no display
 	bool repeat= true;
 	int ws;
 
+	rbuffer = "";
+
 	if (use_stdio) return read_msg(dest, sz);
 
 	/* 

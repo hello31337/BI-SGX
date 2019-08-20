@@ -77,8 +77,16 @@ enclave {
 	
 		public sgx_status_t encrypt_store_status(sgx_ra_context_t context,
 			size_t store_flag, [in, out, size=12]uint8_t *p_iv,
-			[in, out, size=16]uint8_t *tag, [in, out, size=10000]uint8_t *result_cipher,
+			[in, out, size=16]uint8_t *tag, 
+			[in, out, size=10000]uint8_t *result_cipher,
 			[out]size_t *res_len);
+
+		public sgx_status_t process_extract_filename(sgx_ra_context_t context,
+			[in, size=vctx_cipherlen]uint8_t *vctx_cipher, 
+			size_t vctx_cipherlen,
+			[in, size=12]uint8_t *vctx_iv, 
+			[in, size=16]uint8_t *vctx_tag,
+			[in, out, size=16]uint8_t *filename);
 	};
 
 	untrusted {
