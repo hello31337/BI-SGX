@@ -354,8 +354,8 @@ sgx_status_t process_login_info(sgx_ra_context_t context, uint8_t* login_info_ci
 	}
 
 
-	status = sgx_rijndael128GCM_decrypt(&sk_key, (uint8_t *)login_info_cipher, cipherlen,
-		login_info, iv_t, p_iv_len, NULL, 0, &tag_t);
+	status = sgx_rijndael128GCM_decrypt(&sk_key, (uint8_t *)login_info_cipher,
+		cipherlen, login_info, iv_t, p_iv_len, NULL, 0, &tag_t);
 
 
 	if(status != SGX_SUCCESS)
@@ -414,7 +414,8 @@ sgx_status_t process_login_info(sgx_ra_context_t context, uint8_t* login_info_ci
 	}
 
 	sgx_status_t hashst = 
-		sgx_sha256_msg(password, strlen((char*)password), (sgx_sha256_hash_t*)password_hash);
+		sgx_sha256_msg(password, strlen((char*)password), 
+		(sgx_sha256_hash_t*)password_hash);
 
 	return status;
 }
@@ -787,8 +788,8 @@ sgx_status_t process_extract_filename(sgx_ra_context_t context,
 	
 	char *token_div;
 
-	token_div = strtok((char*)vcf_context, "\n"); //discard username
-	token_div = strtok(NULL, "\n"); //and disease_type
+	token_div = strtok((char*)vcf_context, "\n"); //discard whitelist
+	token_div = strtok(NULL, "\n"); //and attribution
 	token_div = strtok(NULL, "\n"); //then get filename
 
 	
@@ -800,6 +801,164 @@ sgx_status_t process_extract_filename(sgx_ra_context_t context,
 	
 
 	delete(vcf_context);
+
+	return SGX_SUCCESS;
+}
+
+sgx_status_t store_vcf_contexts(sgx_ra_context_t context, 
+	uint8_t *vctx_cipher, size_t vctx_cipherlen, uint8_t *vctx_iv,
+	uint8_t *vctx_tag, uint8_t *iv_array, size_t ivlen, 
+	uint8_t *tag_array, size_t taglen)
+{
+	sgx_status_t status = SGX_SUCCESS;
+	sgx_ec_key_128bit_t sk_key;
+	
+	/*Get session key SK to decrypt secret*/
+	status = sgx_ra_get_keys(context, SGX_RA_KEY_SK, &sk_key);
+
+	if(status != SGX_SUCCESS)
+	{
+		const char* message = "Error while obtaining session key.";
+		OCALL_print(message);
+		OCALL_print_status(status);
+		return status;
+	}
+	
+	uint32_t p_iv_len = 12;
+	uint8_t *vcf_context = new uint8_t[vctx_cipherlen + 16]();
+	
+	sgx_aes_gcm_128bit_tag_t tag_t;
+	uint8_t *iv_t = new uint8_t[p_iv_len];
+
+
+	for(int i = 0; i < 16; i++)
+	{
+		tag_t[i] = vctx_tag[i];
+	}
+
+	for(int i = 0; i < p_iv_len; i++)
+	{
+		iv_t[i] = vctx_iv[i];
+	}
+
+
+	status = sgx_rijndael128GCM_decrypt(&sk_key, vctx_cipher,
+		vctx_cipherlen, vcf_context, iv_t, p_iv_len, NULL, 0, &tag_t);
+
+
+	if(status != SGX_SUCCESS)
+	{
+		const char* message = "Error while decrypting SP's secret.";
+		OCALL_print(message);
+		OCALL_print_status(status);
+		return status;
+	}
+
+	
+	char *token_div;
+	int len_tmp, divnum;
+	int attr_len, usnm_len, wlst_len;
+	
+	uint8_t *whitelist;
+	uint8_t *attribution;
+	uint8_t *tar_filename;
+	uint8_t *username;
+	uint8_t *divnum_uchar;
+
+
+	/* parse VCF contexts */
+	token_div = strtok((char*)vcf_context, "\n");
+	len_tmp = strlen(token_div);
+	wlst_len = len_tmp;
+	whitelist = new uint8_t[len_tmp]();
+
+	for(int i = 0; i < len_tmp; i++)
+	{
+		whitelist[i] = (uint8_t)token_div[i];
+	}
+
+
+	token_div = strtok(NULL, "\n");
+	len_tmp = strlen(token_div);
+	attr_len = len_tmp;
+	attribution = new uint8_t[len_tmp];
+
+	for(int i = 0; i < len_tmp; i++)
+	{
+		attribution[i] = (uint8_t)token_div[i];
+	}
+
+
+	token_div = strtok(NULL, "\n");
+	tar_filename = new uint8_t[16];
+
+	for(int i = 0; i < 16; i++)
+	{
+		tar_filename[i] = (uint8_t)token_div[i];
+	}
+
+
+	token_div = strtok(NULL, "\n");
+	len_tmp = strlen(token_div);
+	usnm_len = len_tmp;
+	username = new uint8_t[len_tmp];
+
+	for(int i = 0; i < len_tmp; i++)
+	{
+		username[i] = (uint8_t)token_div[i];
+	}
+
+
+	token_div = strtok(NULL, "\n");
+	divnum = strtol(token_div, NULL, 10);
+
+	
+	/* obtain SHA-256 of attribute and username */
+	uint8_t attr_hash[32] = {0};
+	uint8_t usnm_hash[32] = {0};
+
+
+	status = sgx_sha256_msg(attribution, 
+		attr_len, (sgx_sha256_hash_t*)attr_hash);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print("Failed to obtain sha256 hash.");
+		OCALL_print_status(status);
+
+		return status;
+	}
+
+
+	status = sgx_sha256_msg(username,
+		usnm_len, (sgx_sha256_hash_t*)usnm_hash);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print("Failed to obtain sha256 hash.");
+		OCALL_print_status(status);
+
+		return status;
+	}
+
+
+	/* seal whitelist */
+	size_t sealed_data_size;
+	sealed_data_size = sgx_calc_sealed_data_size(0, wlst_len);
+	
+	uint8_t sealed_whitelist = new uint8_t[sealed_data_size];
+
+	status = sgx_seal_data(0, NULL, wlst_len, whitelist,
+		sealed_data_size, (sgx_sealed_data_t*)sealed_whitelist);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print("Failed to seal whitelist.");
+		OCALL_print_status(status);
+		return status;
+	}
+
+	
 
 	return SGX_SUCCESS;
 }

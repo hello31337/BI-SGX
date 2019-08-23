@@ -969,7 +969,7 @@ void msgio_read_error_check(int rv, string str)
 	{
 		string emsg = "system error reading ";
 		emsg += str;
-		emsg += " from ISV\n";
+		emsg += " from SP\n";
 
 		eprintf(emsg.c_str());
 	}
@@ -977,7 +977,7 @@ void msgio_read_error_check(int rv, string str)
 	{
 		string emsg = "protocol error reading ";
 		emsg += str;
-		emsg += " from ISV\n";
+		emsg += " from SP\n";
 
 		eprintf(emsg.c_str());
 	}
@@ -1580,9 +1580,11 @@ int main (int argc, char *argv[])
 				if(!tar_ofs)
 				{
 					cerr << "Failed to write tarball." << endl;
+					delete(tar_binary);
 					return -1;
 				}
 
+				delete(tar_binary);
 			}
 
 			
@@ -1616,8 +1618,10 @@ int main (int argc, char *argv[])
 
 
 			/* extract data from tarball */
-			string tar_cmd = "tar -xf " + string((char*)tar_filename);
+			string tar_cmd = "tar -xvf " + string((char*)tar_filename);
 			tar_cmd += ".tar";
+
+			
 
 			sys_ret = system(tar_cmd.c_str());
 
@@ -1643,7 +1647,10 @@ int main (int argc, char *argv[])
 
 
 			/* register vcf contexts */
-
+			vst = store_vcf_contexts(eid, &retval, g_ra_ctx, 
+				vctx_cipher, vctx_deflen, iv_vctx, tag_vctx, 
+				(uint8_t*)&received_iv_array, iv_array_length,
+				(uint8_t*)&received_tag_array, tag_array_length);
 
 			/* seal session key and store */
 

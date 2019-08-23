@@ -994,7 +994,7 @@ int main(int argc, char *argv[])
                 msgio->send_nd(tbsize_char, strlen((char*)tbsize_char));
 
 
-                cout << "\nSend encrypted VCF to ISV." << endl;
+                cout << "\nSending encrypted VCF to ISV..." << endl;
 
 
                 for(int i = 0; i < round_num; i++)
@@ -1027,6 +1027,8 @@ int main(int argc, char *argv[])
 
 					delete(tar_uint8t);
 					delete(tar_b64);
+
+					usleep(10000);
                 }
 
 
@@ -1043,7 +1045,11 @@ int main(int argc, char *argv[])
 
 
 				/* send IVs and tags */
+				cout << "\nSending IV array for VCF..." << endl;
 				msgio->send_nd(iv_array_b64, iv_array_b64len);
+				usleep(250000);
+				
+				cout << "\nSending tag array for VCF..." << endl;
 				msgio->send_nd(tag_array_b64, tag_array_b64len);
 
 				delete(iv_array_b64);
@@ -2897,7 +2903,7 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key,
         }
     }
 
-    /* encrypt remained vcf */
+	/* encrypt remained vcf */
     uint8_t *iv_temp = new uint8_t[12]();
     uint8_t *tag_temp = new uint8_t[16]();
     uint8_t *vcf_cipher = new uint8_t[30000000]();

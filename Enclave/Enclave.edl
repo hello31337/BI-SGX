@@ -87,6 +87,13 @@ enclave {
 			[in, size=12]uint8_t *vctx_iv, 
 			[in, size=16]uint8_t *vctx_tag,
 			[in, out, size=16]uint8_t *filename);
+
+		public sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
+			[in, size=vctx_cipherlen]uint8_t *vctx_cipher,
+			size_t vctx_cipherlen, [in, size=12]uint8_t *vctx_iv,
+			[in, size=16]uint8_t *vctx_tag,
+			[in, size=ivlen]uint8_t *iv_array, size_t ivlen,
+			[in, size=taglen]uint8_t *tag_array, size_t taglen);
 	};
 
 	untrusted {
