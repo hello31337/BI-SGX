@@ -89,11 +89,11 @@ enclave {
 			[in, out, size=16]uint8_t *filename);
 
 		public sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
-			[in, size=vctx_cipherlen]uint8_t *vctx_cipher,
-			size_t vctx_cipherlen, [in, size=12]uint8_t *vctx_iv,
-			[in, size=16]uint8_t *vctx_tag,
-			[in, size=ivlen]uint8_t *iv_array, size_t ivlen,
-			[in, size=taglen]uint8_t *tag_array, size_t taglen);
+			[in, size=vctx_cipherlen]uint8_t *vctx_cipher, 
+			size_t vctx_cipherlen, [in,size=12]uint8_t *vctx_iv, 
+			[in, size=16]uint8_t *vctx_tag, [in, size=ivlen]uint8_t *iv_array,
+			size_t ivlen, [in, size=taglen]uint8_t *tag_array, 
+			size_t taglen);
 	};
 
 	untrusted {
@@ -136,7 +136,13 @@ enclave {
 		int OCALL_select_annotation([in, string]char *id, 
 			[out, size=2048]char *record, int vcf_or_list, 
 			int clinvar_flag);
+		
+		int OCALL_store_vctx_into_db([in, size=wlst_size]uint8_t *whitelist,
+			size_t wlst_size, [in, size=32]uint8_t *attr_hash,
+			[in, size=17]uint8_t *filename, [in, size=32]uint8_t *usnm_hash, 
+			int divnum, [in, size=ivlen]uint8_t *iv_array, size_t ivlen,
+			[in, size=taglen]uint8_t *tag_array, size_t taglen);
+
 	};
 };
-
 

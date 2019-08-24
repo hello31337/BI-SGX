@@ -723,6 +723,46 @@ int OCALL_select_annotation(char *id, char *record,
 
 }
 
+
+int OCALL_store_vctx_into_db(uint8_t *whitelist, size_t wlst_size,
+	uint8_t *attr_hash, uint8_t *filename, uint8_t *usnm_hash, 
+	int divnum, uint8_t *iv_array, size_t ivlen, uint8_t *tag_array, 
+	size_t taglen)
+{
+	uint8_t *attr_hash_hex = new uint8_t[65]();
+	uint8_t *usnm_hash_hex = new uint8_t[65]();
+	uint8_t *whitelist_b64 = new uint8_t[wlst_size * 2]();
+
+	int whitelist_b64len = base64_encrypt(whitelist, wlst_size,
+		whitelist_b64, wlst_size * 2);
+
+	for(int i = 0; i < 32; i++)
+	{
+		sprintf((char*)&attr_hash_hex[i*2], "%02x", attr_hash[i]);
+		sprintf((char*)&usnm_hash_hex[i*2], "%02x", usnm_hash[i]);
+	}
+
+	string wlst_str((char*)whitelist_b64);
+	string attr_str((char*)attr_hash_hex);
+	string flnm_str((char*)filename);
+	string usnm_str((char*)usnm_hash_hex);
+	string iv_array_str((char*)iv_array);
+	string tag_array_str((char*)tag_array);
+
+	cout << wlst_str << endl << endl;
+	cout << attr_str << endl << endl;
+	cout << flnm_str << endl << endl;
+	cout << usnm_str << endl << endl;
+	
+	cout << ivlen << endl << endl;
+	cout << taglen << endl << endl;
+
+	cout << iv_array_str << endl << endl;
+	cout << tag_array_str << endl << endl;
+	
+	return 0;
+}
+
 void OCALL_calc_inquiryDB_size(int *inquired_size)
 {
 	string inquiry_res = "";
@@ -1593,6 +1633,9 @@ int main (int argc, char *argv[])
 			void **received_iv_array;
 			void **received_tag_array;
 			int iv_array_length, tag_array_length;
+			
+			uint8_t *iv_dummy, *iv_array;
+			uint8_t *tag_dummy, *tag_array;
 
 			rv = msgio->read_nd((void**)&received_iv_array, &sz);
 
@@ -1603,6 +1646,15 @@ int main (int argc, char *argv[])
 			}
 
 			iv_array_length = sz;
+			
+			iv_dummy = (uint8_t*)received_iv_array;
+			iv_array = new uint8_t[sz + 1]();
+
+			for(int i = 0; i < sz; i++)
+			{
+				iv_array[i] = iv_dummy[i];
+			}
+
 
 
 			rv = msgio->read_nd((void**)&received_tag_array, &sz);
@@ -1614,9 +1666,15 @@ int main (int argc, char *argv[])
 			}
 
 			tag_array_length = sz;
+			
+			tag_dummy = (uint8_t*)received_tag_array;
+			tag_array = new uint8_t[sz + 1]();
 
-
-
+			for(int i = 0; i < sz; i++)
+			{
+				tag_array[i] = tag_dummy[i];
+			}
+			
 			/* extract data from tarball */
 			string tar_cmd = "tar -xvf " + string((char*)tar_filename);
 			tar_cmd += ".tar";
@@ -1649,8 +1707,8 @@ int main (int argc, char *argv[])
 			/* register vcf contexts */
 			vst = store_vcf_contexts(eid, &retval, g_ra_ctx, 
 				vctx_cipher, vctx_deflen, iv_vctx, tag_vctx, 
-				(uint8_t*)&received_iv_array, iv_array_length,
-				(uint8_t*)&received_tag_array, tag_array_length);
+				iv_array, iv_array_length + 1, tag_array, 
+				tag_array_length + 1);
 
 			/* seal session key and store */
 

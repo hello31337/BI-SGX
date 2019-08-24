@@ -857,7 +857,7 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 	
 	char *token_div;
 	int len_tmp, divnum;
-	int attr_len, usnm_len, wlst_len;
+	size_t attr_len, usnm_len, wlst_len;
 	
 	uint8_t *whitelist;
 	uint8_t *attribution;
@@ -890,7 +890,7 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 
 
 	token_div = strtok(NULL, "\n");
-	tar_filename = new uint8_t[16];
+	tar_filename = new uint8_t[16 + 1]();
 
 	for(int i = 0; i < 16; i++)
 	{
@@ -946,7 +946,7 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 	size_t sealed_data_size;
 	sealed_data_size = sgx_calc_sealed_data_size(0, wlst_len);
 	
-	uint8_t sealed_whitelist = new uint8_t[sealed_data_size];
+	uint8_t *sealed_whitelist = new uint8_t[sealed_data_size];
 
 	status = sgx_seal_data(0, NULL, wlst_len, whitelist,
 		sealed_data_size, (sgx_sealed_data_t*)sealed_whitelist);
@@ -958,6 +958,46 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 		return status;
 	}
 
+
+	/* create copy array of IVs and tags for OCALL */
+	uint8_t *iv_copy = new uint8_t[ivlen]();
+	uint8_t *tag_copy = new uint8_t[taglen]();
+
+	for(int i = 0; i < ivlen; i++)
+	{
+		iv_copy[i] = iv_array[i];
+	}
+
+	for(int i = 0; i < taglen; i++)
+	{
+		tag_copy[i] = tag_array[i];
+	}
+
+	
+	
+	/* call OCALL function to store into DB */
+	int ocall_status;
+
+	status = OCALL_store_vctx_into_db(&ocall_status, sealed_whitelist, 
+		sealed_data_size, attr_hash, tar_filename, usnm_hash, 
+		divnum, iv_copy, ivlen, tag_copy, taglen);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print("Error has occured in OCALL.");
+		OCALL_print_status(status);
+		return status;
+	}
+
+	/* need to check ocall_status here */
+
+
+	/* destruct heaps */
+	delete(whitelist);
+	delete(attribution);
+	delete(tar_filename);
+	delete(username);
+	delete(sealed_whitelist);
 	
 
 	return SGX_SUCCESS;

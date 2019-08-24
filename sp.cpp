@@ -786,7 +786,7 @@ int main(int argc, char *argv[])
 
 				string vcf_filename;
 
-				cout << "Input filename of vcf to send: ";
+				cout << "\nInput filename of vcf to send: ";
 				cin >> vcf_filename;
 				cout << endl;
 
@@ -1042,8 +1042,8 @@ int main(int argc, char *argv[])
 
 				tag_array_b64len = base64_encrypt(tag_array, 16 * divnum,
 					tag_array_b64, 16 * divnum * 2);
-
-
+				
+				
 				/* send IVs and tags */
 				cout << "\nSending IV array for VCF..." << endl;
 				msgio->send_nd(iv_array_b64, iv_array_b64len);
