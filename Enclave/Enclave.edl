@@ -93,7 +93,8 @@ enclave {
 			size_t vctx_cipherlen, [in,size=12]uint8_t *vctx_iv, 
 			[in, size=16]uint8_t *vctx_tag, [in, size=ivlen]uint8_t *iv_array,
 			size_t ivlen, [in, size=taglen]uint8_t *tag_array, 
-			size_t taglen);
+			size_t taglen, [out, size=emsg_len]uint8_t *error_msg,
+			size_t emsg_len);
 	};
 
 	untrusted {
@@ -112,9 +113,10 @@ enclave {
 
 		void OCALL_get_time([in, out, size=bufsize]uint8_t *timebuf, int bufsize);
 
-		void OCALL_fwrite([in, size=buflen]uint8_t* buf, int buflen);
+		int OCALL_fwrite([in, size=fnlen]uint8_t *filename, size_t fnlen,
+			[in, size=buflen]uint8_t* buf, size_t buflen);
 
-		void OCALL_fread([in, out, size=buflen]uint8_t* buf, int buflen);
+		void OCALL_fread([in, out, size=buflen]uint8_t *buf, int buflen);
 
 		void OCALL_get_sealed_length([in, size=32]char *dataset_name,
 			[out]int *sealed_length);

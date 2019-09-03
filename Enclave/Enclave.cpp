@@ -808,19 +808,29 @@ sgx_status_t process_extract_filename(sgx_ra_context_t context,
 sgx_status_t store_vcf_contexts(sgx_ra_context_t context, 
 	uint8_t *vctx_cipher, size_t vctx_cipherlen, uint8_t *vctx_iv,
 	uint8_t *vctx_tag, uint8_t *iv_array, size_t ivlen, 
-	uint8_t *tag_array, size_t taglen)
+	uint8_t *tag_array, size_t taglen, uint8_t *error_msg, size_t emsg_len)
 {
 	sgx_status_t status = SGX_SUCCESS;
 	sgx_ec_key_128bit_t sk_key;
-	
+	std::string emsg_str = "Stored VCF file successfully.";
+
 	/*Get session key SK to decrypt secret*/
 	status = sgx_ra_get_keys(context, SGX_RA_KEY_SK, &sk_key);
 
 	if(status != SGX_SUCCESS)
 	{
-		const char* message = "Error while obtaining session key.";
-		OCALL_print(message);
+		emsg_str = "Error while obtaining session key.";
+		OCALL_print(emsg_str.c_str());
 		OCALL_print_status(status);
+
+		emsg_len = emsg_str.length() + 1;
+		error_msg = new uint8_t[emsg_len]();
+		
+		for(int i = 0; i < emsg_len - 1; i++)
+		{
+			error_msg[i] = (uint8_t)emsg_str.c_str()[i];
+		}
+
 		return status;
 	}
 	
@@ -848,11 +858,21 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 
 	if(status != SGX_SUCCESS)
 	{
-		const char* message = "Error while decrypting SP's secret.";
-		OCALL_print(message);
+		emsg_str = "Error while decrypting SP's secret.";
+		OCALL_print(emsg_str.c_str());
 		OCALL_print_status(status);
+
+		emsg_len = emsg_str.length() + 1;
+		error_msg = new uint8_t[emsg_len]();
+		
+		for(int i = 0; i < emsg_len - 1; i++)
+		{
+			error_msg[i] = (uint8_t)emsg_str.c_str()[i];
+		}
+
 		return status;
 	}
+
 
 	
 	char *token_div;
@@ -921,27 +941,49 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 	status = sgx_sha256_msg(attribution, 
 		attr_len, (sgx_sha256_hash_t*)attr_hash);
 
+	
 	if(status != SGX_SUCCESS)
 	{
-		OCALL_print("Failed to obtain sha256 hash.");
+		emsg_str = "Failed to obtain sha256 hash.";
+		OCALL_print(emsg_str.c_str());
 		OCALL_print_status(status);
+
+		emsg_len = emsg_str.length() + 1;
+		error_msg = new uint8_t[emsg_len]();
+		
+		for(int i = 0; i < emsg_len - 1; i++)
+		{
+			error_msg[i] = (uint8_t)emsg_str.c_str()[i];
+		}
 
 		return status;
 	}
+
 
 
 	status = sgx_sha256_msg(username,
 		usnm_len, (sgx_sha256_hash_t*)usnm_hash);
 
+	
 	if(status != SGX_SUCCESS)
 	{
-		OCALL_print("Failed to obtain sha256 hash.");
+		emsg_str = "Failed to obtain sha256 hash.";
+		OCALL_print(emsg_str.c_str());
 		OCALL_print_status(status);
+
+		emsg_len = emsg_str.length() + 1;
+		error_msg = new uint8_t[emsg_len]();
+		
+		for(int i = 0; i < emsg_len - 1; i++)
+		{
+			error_msg[i] = (uint8_t)emsg_str.c_str()[i];
+		}
 
 		return status;
 	}
 
 
+	
 	/* seal whitelist */
 	size_t sealed_data_size;
 	sealed_data_size = sgx_calc_sealed_data_size(0, wlst_len);
@@ -951,12 +993,24 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 	status = sgx_seal_data(0, NULL, wlst_len, whitelist,
 		sealed_data_size, (sgx_sealed_data_t*)sealed_whitelist);
 
+
 	if(status != SGX_SUCCESS)
 	{
-		OCALL_print("Failed to seal whitelist.");
+		emsg_str = "Failed to seal whitelist.";
+		OCALL_print(emsg_str.c_str());
 		OCALL_print_status(status);
+
+		emsg_len = emsg_str.length() + 1;
+		error_msg = new uint8_t[emsg_len]();
+		
+		for(int i = 0; i < emsg_len - 1; i++)
+		{
+			error_msg[i] = (uint8_t)emsg_str.c_str()[i];
+		}
+
 		return status;
 	}
+
 
 
 	/* create copy array of IVs and tags for OCALL */
@@ -982,15 +1036,105 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 		sealed_data_size, attr_hash, tar_filename, usnm_hash, 
 		divnum, iv_copy, ivlen, tag_copy, taglen);
 
+
 	if(status != SGX_SUCCESS)
 	{
-		OCALL_print("Error has occured in OCALL.");
+		emsg_str = "Error has occured in OCALL.";
+		OCALL_print(emsg_str.c_str());
 		OCALL_print_status(status);
+
+		emsg_len = emsg_str.length() + 1;
+		error_msg = new uint8_t[emsg_len]();
+		
+		for(int i = 0; i < emsg_len - 1; i++)
+		{
+			error_msg[i] = (uint8_t)emsg_str.c_str()[i];
+		}
+
 		return status;
 	}
 
-	/* need to check ocall_status here */
 
+	/* need to check ocall_status here */
+	if(ocall_status != 0)
+	{
+		OCALL_print_int(ocall_status);
+		emsg_str = "Failed to store VCF contexts.";
+		OCALL_print(emsg_str.c_str());
+		OCALL_print_status(status);
+
+		emsg_len = emsg_str.length() + 1;
+		error_msg = new uint8_t[emsg_len]();
+		
+		for(int i = 0; i < emsg_len - 1; i++)
+		{
+			error_msg[i] = (uint8_t)emsg_str.c_str()[i];
+		}
+
+		return status;
+	}
+
+
+	/* seal session key */
+	sealed_data_size = sgx_calc_sealed_data_size(0, 16);
+	
+	uint8_t *sealed_key = new uint8_t[sealed_data_size];
+
+	status = sgx_seal_data(0, NULL, 16, sk_key,
+		sealed_data_size, (sgx_sealed_data_t*)sealed_key);
+
+
+	if(status != SGX_SUCCESS)
+	{
+		emsg_str = "Failed to seal session key.";
+		OCALL_print(emsg_str.c_str());
+		OCALL_print_status(status);
+
+		emsg_len = emsg_str.length() + 1;
+		error_msg = new uint8_t[emsg_len]();
+		
+		for(int i = 0; i < emsg_len - 1; i++)
+		{
+			error_msg[i] = (uint8_t)emsg_str.c_str()[i];
+		}
+
+		return status;
+	}
+
+
+	/* store sealed key */
+	std::string key_filename = "sealed_keys/";
+	key_filename += (char*)tar_filename;
+	key_filename += ".bin";
+
+	size_t kf_len = key_filename.length() + 1;
+	uint8_t *kf_uchar = new uint8_t[kf_len]();
+
+	for(int i = 0; i < kf_len - 1; i++)
+	{
+		kf_uchar[i] = (uint8_t)key_filename.c_str()[i];
+	}
+
+	status = OCALL_fwrite(&ocall_status, kf_uchar, kf_len, 
+		sealed_key, sealed_data_size);
+
+	
+	if(status != SGX_SUCCESS)
+	{
+		emsg_str = "Failed to store sealed key.";
+		OCALL_print(emsg_str.c_str());
+		OCALL_print_status(status);
+
+		emsg_len = emsg_str.length() + 1;
+		error_msg = new uint8_t[emsg_len]();
+		
+		for(int i = 0; i < emsg_len - 1; i++)
+		{
+			error_msg[i] = (uint8_t)emsg_str.c_str()[i];
+		}
+
+		return status;
+	}
 
 	/* destruct heaps */
 	delete(whitelist);
@@ -998,7 +1142,19 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 	delete(tar_filename);
 	delete(username);
 	delete(sealed_whitelist);
+	delete(iv_copy);
+	delete(tag_copy);
+	delete(sealed_key);
+	delete(kf_uchar);
+
+	emsg_len = emsg_str.length() + 1;
+	error_msg = new uint8_t[emsg_len]();
 	
+	for(int i = 0; i < emsg_len - 1; i++)
+	{
+		error_msg[i] = (uint8_t)emsg_str.c_str()[i];
+	}
+
 
 	return SGX_SUCCESS;
 }

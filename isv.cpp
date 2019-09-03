@@ -165,6 +165,9 @@ public:
 		int vcf_or_list, int clinvar_flag);
 	int do_executeQueryInt(string sentence, string cond);
 	string do_inquiryDB(); // for interpreter
+	int do_store_vctx(string whitelist, string attribution, string filename,
+		string username, int div_total, string iv_array, string tag_array);
+
 	/*
 	should be added is:
 		- username searcher
@@ -472,6 +475,36 @@ string BISGX_Database::do_inquiryDB()
 }
 
 
+int BISGX_Database::do_store_vctx(string whitelist, string attribution, 
+	string filename, string username, int div_total, string iv_array, 
+	string tag_array)
+{
+	table = "vcf_context";
+
+	try
+	{
+		stmt->execute("INSERT INTO " + table + " (whitelist, attribution," 
+			+ "tar_filename, username, div_total, iv_array, tag_array) "
+			+ "VALUES('" + whitelist + "', '" + attribution + "', '"
+			+ filename + "', '" + username + "', '" + to_string(div_total)
+			+ "', '" + iv_array + "', '" + tag_array + "')");
+	}
+	catch(sql::SQLException &e)
+	{
+		cerr << "# ERR: SQLException in " << __FILE__;
+		cerr <<" on line " << __LINE__ << endl;
+		cerr << "# ERR: " << e.what() << endl;
+		cerr << " (MySQL error code: " << e.getErrorCode();
+		cerr << ", SQLState: " << e.getSQLState() << ")" << endl;
+
+		return -1;
+	}
+
+	return 0;
+}
+
+
+
 void OCALL_print(const char* message)
 {
 	printf("%s\n", message);
@@ -520,11 +553,21 @@ void OCALL_get_time(uint8_t *timebuf, int bufsize)
 	strftime(reinterpret_cast<char*>(timebuf), 64, "%Y/%m/%d %a %H:%M:%S", localtime(&t));
 }
 
-void OCALL_fwrite(uint8_t *buf, int buflen)
+int OCALL_fwrite(uint8_t *filename, size_t fnlen, 
+	uint8_t *buf, size_t buflen)
 {
-	ofstream ofs("sealed.txt", ios::binary | ios::trunc);
+	string filename_str = (char*)filename;
+	ofstream ofs(filename_str, ios::binary | ios::trunc);
 	
 	ofs.write(reinterpret_cast<const char*>(buf), buflen);
+
+	if(!ofs)
+	{
+		cerr << "Failed to write designated file." << endl;
+		return -1;
+	}
+
+	return 0;
 }
 
 void OCALL_fread(uint8_t *buf, int buflen)
@@ -759,7 +802,20 @@ int OCALL_store_vctx_into_db(uint8_t *whitelist, size_t wlst_size,
 
 	cout << iv_array_str << endl << endl;
 	cout << tag_array_str << endl << endl;
+
+	int flag = bdb.do_store_vctx(wlst_str, attr_str, flnm_str,
+		usnm_str, divnum, iv_array_str, tag_array_str);
 	
+	if(flag == 0)
+	{
+		cout << "\nStored VCF contexts successfully." << endl;
+	}
+	else
+	{
+		cerr << "\nFailed to store VCF contexts." << endl;
+		return -1;
+	}
+
 	return 0;
 }
 
@@ -1703,14 +1759,27 @@ int main (int argc, char *argv[])
 			}
 
 
+			mkdir_cmd = "mkdir -p sealed_keys/";
+
+			sys_ret = system(mkdir_cmd.c_str());
+
+			if(!WIFEXITED(sys_ret))
+			{
+				cerr << "Failed to create directory for tarball." << endl;
+				return -1;
+			}
+			
+
+			uint8_t *error_msg = new uint8_t[256]();
 
 			/* register vcf contexts */
 			vst = store_vcf_contexts(eid, &retval, g_ra_ctx, 
 				vctx_cipher, vctx_deflen, iv_vctx, tag_vctx, 
 				iv_array, iv_array_length + 1, tag_array, 
-				tag_array_length + 1);
+				tag_array_length + 1, error_msg, 256);
 
-			/* seal session key and store */
+			cout << error_msg << endl;
+
 
 			/* destruct heaps */
 			delete(tar_filename);
