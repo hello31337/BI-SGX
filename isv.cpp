@@ -165,8 +165,9 @@ public:
 		int vcf_or_list, int clinvar_flag);
 	int do_executeQueryInt(string sentence, string cond);
 	string do_inquiryDB(); // for interpreter
-	int do_store_vctx(string whitelist, string attribution, string filename,
-		string username, int div_total, string iv_array, string tag_array);
+	int do_store_vctx(string whitelist, string chrom, string nation,
+		string disease_type, string filename, string username, 
+		int div_total, string iv_array, string tag_array);
 
 	/*
 	should be added is:
@@ -475,19 +476,19 @@ string BISGX_Database::do_inquiryDB()
 }
 
 
-int BISGX_Database::do_store_vctx(string whitelist, string attribution, 
-	string filename, string username, int div_total, string iv_array, 
-	string tag_array)
+int BISGX_Database::do_store_vctx(string whitelist, string chrom,
+	string nation, string disease_type,	string filename, string username, 
+	int div_total, string iv_array, string tag_array)
 {
 	table = "vcf_context";
 
 	try
 	{
-		stmt->execute("INSERT INTO " + table + " (whitelist, attribution," 
-			+ "tar_filename, username, div_total, iv_array, tag_array) "
-			+ "VALUES('" + whitelist + "', '" + attribution + "', '"
-			+ filename + "', '" + username + "', '" + to_string(div_total)
-			+ "', '" + iv_array + "', '" + tag_array + "')");
+		stmt->execute("INSERT INTO " + table + " (whitelist, chrom, nation, " 
+			+ "disease_type, tar_filename, username, div_total, iv_array, tag_array) "
+			+ "VALUES('" + whitelist + "', '" + chrom + "', '" + nation + "', '"
+			+ disease_type + "', '" + filename + "', '" + username + "', '" 
+			+ to_string(div_total) + "', '" + iv_array + "', '" + tag_array + "')");
 	}
 	catch(sql::SQLException &e)
 	{
@@ -768,11 +769,13 @@ int OCALL_select_annotation(char *id, char *record,
 
 
 int OCALL_store_vctx_into_db(uint8_t *whitelist, size_t wlst_size,
-	uint8_t *attr_hash, uint8_t *filename, uint8_t *usnm_hash, 
-	int divnum, uint8_t *iv_array, size_t ivlen, uint8_t *tag_array, 
-	size_t taglen)
+	uint8_t *chrm_hash, uint8_t *natn_hash, uint8_t *dstp_hash,  
+	uint8_t *filename, uint8_t *usnm_hash, int divnum, uint8_t *iv_array, 
+	size_t ivlen, uint8_t *tag_array, size_t taglen)
 {
-	uint8_t *attr_hash_hex = new uint8_t[65]();
+	uint8_t *chrm_hash_hex = new uint8_t[65]();
+	uint8_t *natn_hash_hex = new uint8_t[65]();
+	uint8_t *dstp_hash_hex = new uint8_t[65]();
 	uint8_t *usnm_hash_hex = new uint8_t[65]();
 	uint8_t *whitelist_b64 = new uint8_t[wlst_size * 2]();
 
@@ -781,19 +784,25 @@ int OCALL_store_vctx_into_db(uint8_t *whitelist, size_t wlst_size,
 
 	for(int i = 0; i < 32; i++)
 	{
-		sprintf((char*)&attr_hash_hex[i*2], "%02x", attr_hash[i]);
+		sprintf((char*)&chrm_hash_hex[i*2], "%02x", chrm_hash[i]);
+		sprintf((char*)&natn_hash_hex[i*2], "%02x", natn_hash[i]);
+		sprintf((char*)&dstp_hash_hex[i*2], "%02x", dstp_hash[i]);
 		sprintf((char*)&usnm_hash_hex[i*2], "%02x", usnm_hash[i]);
 	}
 
 	string wlst_str((char*)whitelist_b64);
-	string attr_str((char*)attr_hash_hex);
+	string chrm_str((char*)chrm_hash_hex);
+	string natn_str((char*)natn_hash_hex);
+	string dstp_str((char*)dstp_hash_hex);
 	string flnm_str((char*)filename);
 	string usnm_str((char*)usnm_hash_hex);
 	string iv_array_str((char*)iv_array);
 	string tag_array_str((char*)tag_array);
 
 	cout << wlst_str << endl << endl;
-	cout << attr_str << endl << endl;
+	cout << chrm_str << endl << endl;
+	cout << natn_str << endl << endl;
+	cout << dstp_str << endl << endl;
 	cout << flnm_str << endl << endl;
 	cout << usnm_str << endl << endl;
 	
@@ -803,8 +812,8 @@ int OCALL_store_vctx_into_db(uint8_t *whitelist, size_t wlst_size,
 	cout << iv_array_str << endl << endl;
 	cout << tag_array_str << endl << endl;
 
-	int flag = bdb.do_store_vctx(wlst_str, attr_str, flnm_str,
-		usnm_str, divnum, iv_array_str, tag_array_str);
+	int flag = bdb.do_store_vctx(wlst_str, chrm_str, natn_str, dstp_str,
+		flnm_str, usnm_str, divnum, iv_array_str, tag_array_str);
 	
 	if(flag == 0)
 	{
@@ -1771,15 +1780,99 @@ int main (int argc, char *argv[])
 			
 
 			uint8_t *error_msg = new uint8_t[256]();
+			size_t emsg_cipher_len;
 
 			/* register vcf contexts */
 			vst = store_vcf_contexts(eid, &retval, g_ra_ctx, 
 				vctx_cipher, vctx_deflen, iv_vctx, tag_vctx, 
 				iv_array, iv_array_length + 1, tag_array, 
-				tag_array_length + 1, error_msg, 256);
+				tag_array_length + 1, error_msg, 256, &emsg_cipher_len);
 
-			cout << error_msg << endl;
+			
+			/*Convert result contexts to base64 format*/
+			uint8_t* res_cipherb64 = new uint8_t[emsg_cipher_len * 2];
+			uint8_t res_ivb64[64] = {'\0'};
+			uint8_t res_tagb64[64] = {'\0'};
+			uint8_t res_deflenb64[128] = {'\0'};
+			int res_cipherb64_len, res_ivb64_len, res_tagb64_len, res_deflenb64_len;
 
+			/*Encode result cipher*/
+			res_cipherb64_len = base64_encrypt(error_msg, emsg_cipher_len,
+						res_cipherb64, emsg_cipher_len * 2);
+
+			/*Encode result IV*/
+			res_ivb64_len = base64_encrypt(iv_vctx, 12, res_ivb64, 64);
+
+			/*Encode result MAC tag*/
+			res_tagb64_len = base64_encrypt(tag_vctx, 16, res_tagb64, 64);
+
+			/*Encode result cipher's length*/
+			uint8_t *resdeflentmp = 
+				(uint8_t*)to_string(emsg_cipher_len).c_str();
+
+			res_deflenb64_len = base64_encrypt(resdeflentmp, 
+				strlen((char*)resdeflentmp), res_deflenb64, 128);
+
+
+			/*Base64 value check*/
+			cout << "========================================================================" << endl;
+			cout << "result cipher in base64: " << endl;
+			cout << res_cipherb64 << endl;
+			cout << "========================================================================" << endl;
+			cout << "result IV in base64: " << endl;
+			cout << res_ivb64 << endl;
+			cout << "========================================================================" << endl;
+			cout << "result tag in base64: " << endl;
+			cout << res_tagb64 << endl;
+			cout << "========================================================================" << endl;
+			cout << "result cipher's length in base64" << endl;
+			cout << res_deflenb64 << endl;
+			cout << "========================================================================" << endl;
+			cout << endl;
+
+			/*send base64-ed result cipher to SP*/
+			cout << "========================================================================" << endl;
+			cout << "Send encrypted result to SP." << endl;
+			
+			cout << "Encrypted result to be sent is: " << endl;
+			msgio->send(res_cipherb64, strlen((char*)res_cipherb64));
+
+			cout << "Complete sending message." << endl;
+			cout << "Please wait for 0.25 sec." << endl;
+			cout << "========================================================================" << endl;
+
+			usleep(250000);
+
+			/*send base64-ed IV to SP*/
+			cout << "IV to be sent is: " << endl;
+			msgio->send(res_ivb64, strlen((char*)res_ivb64));
+
+			cout << "Complete sending message." << endl;
+			cout << "Please wait for 0.25 sec." << endl;
+			cout << "========================================================================" << endl;
+			
+			usleep(250000);
+
+			/*send base64-ed MAC tag to SP*/
+			cout << "Tag to be sent is: " << endl;
+			msgio->send(res_tagb64, strlen((char*)res_tagb64));
+
+			cout << "Complete sending message." << endl;
+			cout << "Please wait for 0.25 sec." << endl;
+			cout << "========================================================================" << endl;
+
+			usleep(250000);
+
+			/*send base64-ed result cipher length to SP*/
+			cout << "Result cipher's length to be sent is: " << endl;
+			msgio->send(res_deflenb64, strlen((char*)res_deflenb64));
+
+			cout << "Complete sending message." << endl;
+			cout << "Please wait for 0.25 sec." << endl;
+			cout << "========================================================================" << endl;
+			
+			cout << "Complete sending result contexts to SP." << endl << endl;
+			
 
 			/* destruct heaps */
 			delete(tar_filename);

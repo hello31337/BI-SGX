@@ -378,10 +378,12 @@ again:
 			} else ws= 2;
 
 			if ( idx == 0 ) return 1;
+			/*
 			else if ( idx %2 ) {
 				eprintf("read odd byte count %zu\n", idx);
 				return 0;
 			}
+			*/
 			if ( sz != NULL ) *sz= idx;
 
 			*dest= (char *) malloc(idx/2);

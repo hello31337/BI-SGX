@@ -845,7 +845,7 @@ int main(int argc, char *argv[])
                     return -1;
                 }
 
-                string wht_filename, whitelist, wht_tmp, attribution;
+                string wht_filename, whitelist, wht_tmp, chrom, nation, disease_type;
 
                 cout << "\nInput filename of whitelist: ";
                 cin >> wht_filename;
@@ -872,13 +872,23 @@ int main(int argc, char *argv[])
                 whitelist.pop_back();
 
 
-                cout << "Input attribution of this VCF file ";
-				cout << "(nation, disease type, etc.)" << endl;
-                cin >> attribution;
+                cout << "Input chromosome number of this VCF file: " << endl;
+                cin >> chrom;
+
+				cout << "\nInput nation info of this VCF file: " << endl;
+				cin >> nation;
+
+				cout << "\nInput disease type info of this VCF file: " << endl;
+				cin >> disease_type;
+
+
+
 				string vcf_context = "";
 
                 vcf_context += whitelist + '\n';
-                vcf_context += attribution + '\n';
+                vcf_context += chrom + '\n';
+				vcf_context += nation + '\n';
+				vcf_context += disease_type + '\n';
                 vcf_context += tar_filename + '\n';
                 vcf_context += username + '\n';
                 vcf_context += to_string(div_total);

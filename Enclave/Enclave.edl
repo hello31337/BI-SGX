@@ -90,11 +90,12 @@ enclave {
 
 		public sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 			[in, size=vctx_cipherlen]uint8_t *vctx_cipher, 
-			size_t vctx_cipherlen, [in,size=12]uint8_t *vctx_iv, 
-			[in, size=16]uint8_t *vctx_tag, [in, size=ivlen]uint8_t *iv_array,
-			size_t ivlen, [in, size=taglen]uint8_t *tag_array, 
-			size_t taglen, [out, size=emsg_len]uint8_t *error_msg,
-			size_t emsg_len);
+			size_t vctx_cipherlen, [in, out, size=12]uint8_t *vctx_iv, 
+			[in, out, size=16]uint8_t *vctx_tag, 
+			[in, size=ivlen]uint8_t *iv_array, size_t ivlen, 
+			[in, size=taglen]uint8_t *tag_array, size_t taglen, 
+			[out, size=emsg_len]uint8_t *error_msg_cipher, size_t emsg_len,
+			[out]size_t *emsg_cipher_len);
 	};
 
 	untrusted {
@@ -140,7 +141,8 @@ enclave {
 			int clinvar_flag);
 		
 		int OCALL_store_vctx_into_db([in, size=wlst_size]uint8_t *whitelist,
-			size_t wlst_size, [in, size=32]uint8_t *attr_hash,
+			size_t wlst_size, [in, size=32]uint8_t *chrm_hash,
+			[in, size=32]uint8_t *natn_hash, [in, size=32]uint8_t *dstp_hash,
 			[in, size=17]uint8_t *filename, [in, size=32]uint8_t *usnm_hash, 
 			int divnum, [in, size=ivlen]uint8_t *iv_array, size_t ivlen,
 			[in, size=taglen]uint8_t *tag_array, size_t taglen);

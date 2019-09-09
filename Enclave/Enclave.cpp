@@ -789,7 +789,9 @@ sgx_status_t process_extract_filename(sgx_ra_context_t context,
 	char *token_div;
 
 	token_div = strtok((char*)vcf_context, "\n"); //discard whitelist
-	token_div = strtok(NULL, "\n"); //and attribution
+	token_div = strtok(NULL, "\n"); //and chromosome number
+	token_div = strtok(NULL, "\n"); //nation info
+	token_div = strtok(NULL, "\n"); //disease type
 	token_div = strtok(NULL, "\n"); //then get filename
 
 	
@@ -808,11 +810,13 @@ sgx_status_t process_extract_filename(sgx_ra_context_t context,
 sgx_status_t store_vcf_contexts(sgx_ra_context_t context, 
 	uint8_t *vctx_cipher, size_t vctx_cipherlen, uint8_t *vctx_iv,
 	uint8_t *vctx_tag, uint8_t *iv_array, size_t ivlen, 
-	uint8_t *tag_array, size_t taglen, uint8_t *error_msg, size_t emsg_len)
+	uint8_t *tag_array, size_t taglen, uint8_t *error_msg_cipher, 
+	size_t emsg_len, size_t *emsg_cipher_len)
 {
 	sgx_status_t status = SGX_SUCCESS;
 	sgx_ec_key_128bit_t sk_key;
 	std::string emsg_str = "Stored VCF file successfully.";
+	uint8_t *error_msg;
 
 	/*Get session key SK to decrypt secret*/
 	status = sgx_ra_get_keys(context, SGX_RA_KEY_SK, &sk_key);
@@ -877,10 +881,12 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 	
 	char *token_div;
 	int len_tmp, divnum;
-	size_t attr_len, usnm_len, wlst_len;
+	size_t chrm_len, natn_len, dstp_len, usnm_len, wlst_len;
 	
 	uint8_t *whitelist;
-	uint8_t *attribution;
+	uint8_t *chrom;
+	uint8_t *nation;
+	uint8_t *disease_type;
 	uint8_t *tar_filename;
 	uint8_t *username;
 	uint8_t *divnum_uchar;
@@ -900,12 +906,34 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 
 	token_div = strtok(NULL, "\n");
 	len_tmp = strlen(token_div);
-	attr_len = len_tmp;
-	attribution = new uint8_t[len_tmp];
+	chrm_len = len_tmp;
+	chrom = new uint8_t[len_tmp];
 
 	for(int i = 0; i < len_tmp; i++)
 	{
-		attribution[i] = (uint8_t)token_div[i];
+		chrom[i] = (uint8_t)token_div[i];
+	}
+
+
+	token_div = strtok(NULL, "\n");
+	len_tmp = strlen(token_div);
+	natn_len = len_tmp;
+	nation = new uint8_t[len_tmp];
+
+	for(int i = 0; i < len_tmp; i++)
+	{
+		nation[i] = (uint8_t)token_div[i];
+	}
+
+
+	token_div = strtok(NULL, "\n");
+	len_tmp = strlen(token_div);
+	dstp_len = len_tmp;
+	disease_type = new uint8_t[len_tmp];
+
+	for(int i = 0; i < len_tmp; i++)
+	{
+		disease_type[i] = (uint8_t)token_div[i];
 	}
 
 
@@ -933,13 +961,15 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 	divnum = strtol(token_div, NULL, 10);
 
 	
-	/* obtain SHA-256 of attribute and username */
-	uint8_t attr_hash[32] = {0};
+	/* obtain SHA-256 of attributions and username */
+	uint8_t chrm_hash[32] = {0};
+	uint8_t natn_hash[32] = {0};
+	uint8_t dstp_hash[32] = {0};
 	uint8_t usnm_hash[32] = {0};
 
 
-	status = sgx_sha256_msg(attribution, 
-		attr_len, (sgx_sha256_hash_t*)attr_hash);
+	status = sgx_sha256_msg(chrom, chrm_len, 
+				(sgx_sha256_hash_t*)chrm_hash);
 
 	
 	if(status != SGX_SUCCESS)
@@ -958,6 +988,54 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 
 		return status;
 	}
+	
+
+
+	status = sgx_sha256_msg(nation,
+		natn_len, (sgx_sha256_hash_t*)natn_hash);
+
+	
+	if(status != SGX_SUCCESS)
+	{
+		emsg_str = "Failed to obtain sha256 hash.";
+		OCALL_print(emsg_str.c_str());
+		OCALL_print_status(status);
+
+		emsg_len = emsg_str.length() + 1;
+		error_msg = new uint8_t[emsg_len]();
+		
+		for(int i = 0; i < emsg_len - 1; i++)
+		{
+			error_msg[i] = (uint8_t)emsg_str.c_str()[i];
+		}
+
+		return status;
+	}
+
+
+
+	status = sgx_sha256_msg(disease_type, 
+		dstp_len, (sgx_sha256_hash_t*)dstp_hash);
+
+	
+	if(status != SGX_SUCCESS)
+	{
+		emsg_str = "Failed to obtain sha256 hash.";
+		OCALL_print(emsg_str.c_str());
+		OCALL_print_status(status);
+
+		emsg_len = emsg_str.length() + 1;
+		error_msg = new uint8_t[emsg_len]();
+		
+		for(int i = 0; i < emsg_len - 1; i++)
+		{
+			error_msg[i] = (uint8_t)emsg_str.c_str()[i];
+		}
+
+		return status;
+	}
+
+
 
 
 
@@ -1033,8 +1111,8 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 	int ocall_status;
 
 	status = OCALL_store_vctx_into_db(&ocall_status, sealed_whitelist, 
-		sealed_data_size, attr_hash, tar_filename, usnm_hash, 
-		divnum, iv_copy, ivlen, tag_copy, taglen);
+		sealed_data_size, chrm_hash, natn_hash, dstp_hash, tar_filename, 
+		usnm_hash, divnum, iv_copy, ivlen, tag_copy, taglen);
 
 
 	if(status != SGX_SUCCESS)
@@ -1138,7 +1216,9 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 
 	/* destruct heaps */
 	delete(whitelist);
-	delete(attribution);
+	delete(chrom);
+	delete(nation);
+	delete(disease_type);
 	delete(tar_filename);
 	delete(username);
 	delete(sealed_whitelist);
@@ -1148,6 +1228,8 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 	delete(kf_uchar);
 
 	emsg_len = emsg_str.length() + 1;
+	*emsg_cipher_len = emsg_len;
+
 	error_msg = new uint8_t[emsg_len]();
 	
 	for(int i = 0; i < emsg_len - 1; i++)
@@ -1155,6 +1237,33 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 		error_msg[i] = (uint8_t)emsg_str.c_str()[i];
 	}
 
+
+	/* encrypt status message */
+	OCALL_generate_nonce(vctx_iv, 12);
+
+	/*AES/GCM's cipher length is equal to the length of plain text*/
+	status = sgx_rijndael128GCM_encrypt(&sk_key, error_msg, emsg_len,
+		error_msg_cipher, iv_t, 12, NULL, 0, &tag_t);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print("Error while encrypting result.");
+		OCALL_print_status(status);
+		return status;
+	}
+
+	for(int i = 0; i < 16; i++)
+	{
+		vctx_tag[i] = tag_t[i];
+	}
+
+	for(int i = 0; i < 12; i++)
+	{
+		vctx_iv[i] = iv_t[i];
+	}
+
+	delete(vcf_context);
+	delete(iv_t);
 
 	return SGX_SUCCESS;
 }
