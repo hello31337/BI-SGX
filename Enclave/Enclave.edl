@@ -54,7 +54,7 @@ enclave {
 			[user_check]unsigned char *code_cipher, size_t cipherlen,
 			[in, out, size=12]unsigned char *p_iv,
 			[in, out, size=16]unsigned char *tag,
-			[in, out, size=10000]unsigned char *result_cipher,
+			[in, out, size=2000000]unsigned char *result_cipher,
 			[out]size_t *res_len);
 
 		public sgx_status_t process_login_info(sgx_ra_context_t context,
@@ -146,6 +146,17 @@ enclave {
 			[in, size=17]uint8_t *filename, [in, size=32]uint8_t *usnm_hash, 
 			int divnum, [in, size=ivlen]uint8_t *iv_array, size_t ivlen,
 			[in, size=taglen]uint8_t *tag_array, size_t taglen);
+
+		int OCALL_inquiryVCFContext([in, size=chrm_len]uint8_t *chrom, 
+			size_t chrm_len, [in, size=natn_len]uint8_t *nation, size_t natn_len,
+			[in, size=dstp_len]uint8_t *disease_type, size_t dstp_len,
+			[in, out, size=sz]char *result, size_t sz);
+
+		int OCALL_calc_inquiryVCTX_size([in, size=chrm_len]uint8_t *chrom, 
+			size_t chrm_len, [in, size=natn_len]uint8_t *nation, size_t natn_len,
+			[in, size=dstp_len]uint8_t *disease_type, size_t dstp_len,
+			[out]size_t *sz);
+
 
 	};
 };

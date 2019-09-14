@@ -2251,7 +2251,7 @@ int main (int argc, char *argv[])
 			}
 			else if(login_flag == 1)//Researcher
 			{
-				result_cipher = new uint8_t[1000000];
+				result_cipher = new uint8_t[2000000]();
 
 				ecall_status = run_interpreter(eid, &retval, g_ra_ctx,
 					cipher_to_enclave, (size_t)deflen, iv_to_enclave,

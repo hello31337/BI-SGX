@@ -557,7 +557,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 
 			case Toint: case Input: case Average: case Edist: case Galign:
 			case Pow: case Sin: case Cos: case Tan: case Log: case Log10:
-			case Exp: case Sqrt: case Cbrt: case Ceil: case Absl:
+			case Exp: case Sqrt: case Cbrt: case Ceil: case Absl: case DEO:
 			case Floor: case Round: case Rand: case SearchA: case InquiryVCF:
 				sysFncExec_syntax(kd);
 
@@ -615,7 +615,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 
 		case Toint: case Input: case Average: case Edist: case Galign:
 		case Pow: case Sin: case Cos: case Tan: case Log: case Log10:
-		case Exp: case Sqrt: case Cbrt: case Ceil: case Absl:
+		case Exp: case Sqrt: case Cbrt: case Ceil: case Absl: case DEO:
 		case Floor: case Round: case Rand: case SearchA: case InquiryVCF:
 			sysFncExec(kd);
 
@@ -653,6 +653,11 @@ int Bcode::opOrder(TknKind kd)
 		default:
 			return 0;
 	}
+}
+
+namespace Bbfunc
+{
+	extern double DAMMERUNG_EYES_ONLY();
 }
 
 void Bcode::binaryExpr(TknKind op)
@@ -887,6 +892,14 @@ void Bcode::sysFncExec_syntax(TknKind kd)
 
 			break;
 
+		case DEO: 
+			code = nextCode();
+			code = chk_nextCode(code, '(');
+			code = chk_nextCode(code, ')');
+			stk.push(1.0);
+
+			break;
+
 		case SearchA:
 			code = nextCode();
 			code = chk_nextCode(code, '(');
@@ -1015,6 +1028,22 @@ void Bcode::sysFncExec(TknKind kd)
 
 			code = nextCode(); // Need to skip RParen
 
+			break;
+		}
+
+		case DEO:
+		{
+			nextCode();
+			nextCode();
+			code = nextCode();
+			
+			uint8_t *decoy = new uint8_t[0];
+			delete(decoy);
+
+			double temp = Bbfunc::DAMMERUNG_EYES_ONLY();
+
+			stk.push(temp);
+			
 			break;
 		}
 
