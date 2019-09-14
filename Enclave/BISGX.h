@@ -75,7 +75,7 @@ enum TknKind
 	IntDivi = '\\',	Comma = ',',	DblQ = '"',
 	Func = 150,		Var,	If,		Elif,	Else,	For,	To,
 	Step,	While,	End,	Break,	Return,	Option,	Print,	Println,
-	Average,Edist,	Galign,	Pow,	InquiryDB,
+	Average,Edist,	Galign,	Pow,	InquiryDB,	InquiryVCF,
 	Sin,	Cos,	Tan,	Log,	Log10,	Exp,	Sqrt,	Cbrt,
 	Ceil,	Absl,	Floor,	Round,	Rand,	SearchA,
 	Input,	Toint,	Exit,	Equal,	NotEq,

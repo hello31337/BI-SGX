@@ -80,6 +80,8 @@ namespace Bbfunc
 		std::string *max_array, std::string *max_array2);
 	extern double searchAnnotation(std::string annotation_id,
 		int vcf_or_list, int clinvar_flag);
+	extern double inquiryVCFContext(std::string chrom,
+		std::string nation, std::string disease_type);
 }
 
 namespace Bmath
@@ -556,7 +558,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 			case Toint: case Input: case Average: case Edist: case Galign:
 			case Pow: case Sin: case Cos: case Tan: case Log: case Log10:
 			case Exp: case Sqrt: case Cbrt: case Ceil: case Absl:
-			case Floor: case Round: case Rand: case SearchA:
+			case Floor: case Round: case Rand: case SearchA: case InquiryVCF:
 				sysFncExec_syntax(kd);
 
 				break;
@@ -614,7 +616,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 		case Toint: case Input: case Average: case Edist: case Galign:
 		case Pow: case Sin: case Cos: case Tan: case Log: case Log10:
 		case Exp: case Sqrt: case Cbrt: case Ceil: case Absl:
-		case Floor: case Round: case Rand: case SearchA:
+		case Floor: case Round: case Rand: case SearchA: case InquiryVCF:
 			sysFncExec(kd);
 
 			break;
@@ -896,7 +898,20 @@ void Bcode::sysFncExec_syntax(TknKind kd)
 			code = chk_nextCode(code, ')');
 			stk.push(1.0);
 
-			break;			
+			break;
+
+		case InquiryVCF:
+			code = nextCode();
+			code = chk_nextCode(code, '(');
+			code = chk_nextCode(code, String);
+			code = chk_nextCode(code, ',');
+			code = chk_nextCode(code, String);
+			code = chk_nextCode(code, ',');
+			code = chk_nextCode(code, String);
+			code = chk_nextCode(code, ')');
+			stk.push(1.0);
+
+			break;
 
 		case Pow: case Rand:
 			code = nextCode();
@@ -1030,6 +1045,35 @@ void Bcode::sysFncExec(TknKind kd)
 				vcf_or_list, clinvar_flag);
 			stk.push(temp);
 
+
+			break;
+		}
+
+		case InquiryVCF:
+		{
+			std::string chrom, nation, disease_type;
+
+			code = nextCode(); //LParen
+			code = nextCode(); //String
+
+			chrom = code.text;
+
+			code = nextCode(); //Comma
+			code = nextCode(); //String
+
+			nation = code.text;
+
+			code = nextCode(); //Comma
+			code = nextCode(); //String
+
+			disease_type = code.text;
+
+			code = nextCode(); //Skip RParen
+
+			double temp = Bbfunc::inquiryVCFContext(chrom, 
+				nation, disease_type);
+
+			stk.push(temp);
 
 			break;
 		}

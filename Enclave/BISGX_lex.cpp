@@ -62,7 +62,7 @@ namespace Blex
 		{"abs"		, Absl	}, {"floor"		, Floor },
 		{"ceil"		, Ceil	}, {"round"		, Round	},
 		{"rand"		, Rand	}, {"searchAnnotation", SearchA },
-		{"exit"		, Exit	},
+		{"inquiryVCF", InquiryVCF}, {"exit"		, Exit	},
 		{"("	, Lparen	}, {")"		, Rparen	},
 		{"["	, Lbracket	}, {"]"		, Rbracket	},
 		{"+"	, Plus		}, {"-"		, Minus		},

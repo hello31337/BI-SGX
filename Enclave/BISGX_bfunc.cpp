@@ -49,6 +49,8 @@ namespace Bbfunc
 	double executeNWAlignment(std::string dataset_name);
 	double searchAnnotation(std::string annotation_id, 
 		int vcf_or_list, int clinvar_flag);
+	double inquiryVCFContext(std::string chrom, 
+		std::string nation, std::string disease_type);
 }
 
 namespace Bmain
@@ -630,4 +632,146 @@ double Bbfunc::searchAnnotation(std::string annotation_id,
 	Bmain::result_str += "\n";
 
 	return (double)ocall_ret;
+}
+
+double Bbfunc::inquiryVCFContext(std::string chrom, 
+	std::string nation, std::string disease_type)
+{
+	size_t chrm_len, natn_len, dstp_len;
+
+	chrm_len = chrom.length();
+	natn_len = nation.length();
+	dstp_len = disease_type.length();
+
+
+	uint8_t *chrom_uchar = new uint8_t[chrm_len + 1]();
+	uint8_t *nation_uchar = new uint8_t[natn_len + 1]();
+	uint8_t *disease_type_uchar = new uint8_t[dstp_len + 1]();
+
+	for(int i = 0; i < chrm_len; i++)
+	{
+		chrom_uchar[i] = (uint8_t)chrom.c_str()[i];
+	}
+
+	for(int i = 0; i < natn_len; i++)
+	{
+		nation_uchar[i] = (uint8_t)nation.c_str()[i];
+	}
+
+	for(int i = 0; i < dstp_len; i++)
+	{
+		disease_type_uchar[i] = (uint8_t)disease_type.c_str()[i];
+	}
+
+	uint8_t *chrm_hash = new uint8_t[32]();
+	uint8_t *natn_hash = new uint8_t[32]();
+	uint8_t *dstp_hash = new uint8_t[32]();
+	
+	sgx_status_t status = SGX_SUCCESS;
+
+	if(chrm_len > 1)
+	{
+		status = sgx_sha256_msg(chrom_uchar, chrm_len,
+			(sgx_sha256_hash_t*)chrm_hash);
+
+		if(status != SGX_SUCCESS)
+		{
+			throw std::string("Failed to obtain sha256 hash.");
+		}
+	}
+
+
+	if(natn_len > 1)
+	{
+		status = sgx_sha256_msg(nation_uchar, natn_len,
+			(sgx_sha256_hash_t*)natn_hash);
+
+		if(status != SGX_SUCCESS)
+		{
+			throw std::string("Failed to obtain sha256 hash.");
+		}
+	}
+
+
+	if(dstp_len > 1)
+	{
+		status = sgx_sha256_msg(disease_type_uchar, dstp_len,
+			(sgx_sha256_hash_t*)dstp_hash);
+
+		if(status != SGX_SUCCESS)
+		{
+			throw std::string("Failed to obtain sha256 hash.");
+		}
+	}
+
+	int ret = 0;
+	size_t iqvx_sz = 0;
+
+	status = OCALL_calc_inquiryVCTX_size(&ret, chrm_hash, 32, 
+		natn_hash, 32, dstp_hash, 32, &iqvx_sz);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print_status(status);
+		throw std::string("Internal SGX error.");
+	}
+
+	
+	
+	if(ret != 0)
+	{
+		throw std::string("Error has occurred while querying MySQL.");
+	}
+	
+	
+
+	OCALL_print("\nestimated size of inquiryVCTX:");
+	OCALL_print_int(iqvx_sz);
+
+	if(iqvx_sz <= 0)
+	{
+		Bmain::result_str += "No VCF is found with designated condition.";
+		
+		delete(chrom_uchar);
+		delete(nation_uchar);
+		delete(disease_type_uchar);
+		delete(chrm_hash);
+		delete(natn_hash);
+		delete(dstp_hash);
+
+		return 0;
+	}
+
+	char *result = new char[iqvx_sz + 1]();
+
+	status = OCALL_inquiryVCFContext(&ret, chrm_hash, 32, natn_hash, 32, 
+		dstp_hash, 32, result, iqvx_sz);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print_status(status);
+		throw std::string("Internal SGX error.");
+	}
+
+
+	if(ret != 0)
+	{
+		throw std::string("Error has occurred while querying MySQL.");
+	}
+
+
+	OCALL_print(result);
+
+	Bmain::result_str += result;
+	Bmain::result_str += "\n";
+	
+	delete(result);
+	delete(chrom_uchar);
+	delete(nation_uchar);
+	delete(disease_type_uchar);
+	delete(chrm_hash);
+	delete(natn_hash);
+	delete(dstp_hash);
+
+	return 0;
 }

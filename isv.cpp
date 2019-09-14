@@ -168,6 +168,8 @@ public:
 	int do_store_vctx(string whitelist, string chrom, string nation,
 		string disease_type, string filename, string username, 
 		int div_total, string iv_array, string tag_array);
+	int do_inquiryVCTX(string chrom, string nation, string disease_type,
+		string *result);
 
 	/*
 	should be added is:
@@ -505,6 +507,86 @@ int BISGX_Database::do_store_vctx(string whitelist, string chrom,
 }
 
 
+int BISGX_Database::do_inquiryVCTX(string chrom, string nation, string disease_type,
+	string *result)
+{
+	/* NEED TO IMPLEMENT REJECTION FEATURE USING WHITELIST */
+	table = "vcf_context";
+
+	string null_str = "";
+
+	for(int i = 0; i < 64; i++)
+	{
+		null_str += "0";
+	}
+
+	try
+	{
+		string cmd = "SELECT tar_filename FROM vcf_context";
+		
+		if(chrom != null_str || nation != null_str || disease_type != null_str)
+		{
+			cmd += " WHERE ";
+
+			if(chrom != null_str)
+			{
+				cmd += "chrom='";
+				cmd += chrom;
+				cmd += "'";
+
+				if(nation != null_str || disease_type != null_str)
+				{
+					cmd += " AND ";
+				}
+			}
+
+			if(nation != null_str)
+			{
+				cmd += "nation='";
+				cmd += nation;
+				cmd += "'";
+
+				if(disease_type != null_str)
+				{
+					cmd += " AND ";
+				}
+			}
+
+			if(disease_type != null_str)
+			{
+				cmd += "disease_type='";
+				cmd += disease_type;
+				cmd += "'";
+			}
+		}
+
+		cout << "\n" << cmd << endl << endl;
+
+		res = stmt->executeQuery(cmd);
+
+		while(res->next())
+		{
+			*result += res->getString("tar_filename");
+			*result += "\n";
+		}
+
+		result->pop_back();
+	}
+	catch(sql::SQLException &e)
+	{
+		cerr << "# ERR: SQLException in " << __FILE__;
+		cerr <<" on line " << __LINE__ << endl;
+		cerr << "# ERR: " << e.what() << endl;
+		cerr << " (MySQL error code: " << e.getErrorCode();
+		cerr << ", SQLState: " << e.getSQLState() << ")" << endl;
+
+		return -1;
+	}
+
+	return 0;
+}
+
+
 
 void OCALL_print(const char* message)
 {
@@ -823,6 +905,83 @@ int OCALL_store_vctx_into_db(uint8_t *whitelist, size_t wlst_size,
 	{
 		cerr << "\nFailed to store VCF contexts." << endl;
 		return -1;
+	}
+
+	return 0;
+}
+
+int OCALL_calc_inquiryVCTX_size(uint8_t *chrom, size_t chrm_len, uint8_t *nation,
+	size_t natn_len, uint8_t *disease_type, size_t dstp_len, size_t *sz)
+{
+	uint8_t *chrm_hash_hex = new uint8_t[65]();
+	uint8_t *natn_hash_hex = new uint8_t[65]();
+	uint8_t *dstp_hash_hex = new uint8_t[65]();
+	
+	for(int i = 0; i < 32; i++)
+	{
+		sprintf((char*)&chrm_hash_hex[i*2], "%02x", chrom[i]);
+		sprintf((char*)&natn_hash_hex[i*2], "%02x", nation[i]);
+		sprintf((char*)&dstp_hash_hex[i*2], "%02x", disease_type[i]);
+	}
+
+
+	string chrm_str = string((char*)chrm_hash_hex);
+	string natn_str = string((char*)natn_hash_hex);
+	string dstp_str = string((char*)dstp_hash_hex);
+	
+	string ret_str = "";
+
+	int ret = bdb.do_inquiryVCTX(chrm_str, natn_str, dstp_str, &ret_str);
+
+	if(ret != 0)
+	{
+		cerr << "Failed to query MySQL." << endl;
+		return -1;
+	}
+
+	*sz = ret_str.length();
+
+	cout << "\nINFO: sz: " << endl;
+	cout << *sz << endl << endl;
+
+	return 0;
+}
+
+
+int OCALL_inquiryVCFContext(uint8_t *chrom, size_t chrm_len, uint8_t *nation,
+	size_t natn_len, uint8_t *disease_type, size_t dstp_len, char *result, size_t sz)
+{
+	uint8_t *chrm_hash_hex = new uint8_t[65]();
+	uint8_t *natn_hash_hex = new uint8_t[65]();
+	uint8_t *dstp_hash_hex = new uint8_t[65]();
+	
+	for(int i = 0; i < 32; i++)
+	{
+		sprintf((char*)&chrm_hash_hex[i*2], "%02x", chrom[i]);
+		sprintf((char*)&natn_hash_hex[i*2], "%02x", nation[i]);
+		sprintf((char*)&dstp_hash_hex[i*2], "%02x", disease_type[i]);
+	}
+
+
+	string chrm_str = string((char*)chrm_hash_hex);
+	string natn_str = string((char*)natn_hash_hex);
+	string dstp_str = string((char*)dstp_hash_hex);
+
+
+	string ret_str = "";
+
+	int ret = bdb.do_inquiryVCTX(chrm_str, natn_str, dstp_str, &ret_str);
+
+	if(ret != 0)
+	{
+		return -1;
+	}
+
+	size_t retstr_len = ret_str.length();
+
+	for(int i = 0; i < retstr_len; i++)
+	{
+		result[i] = ret_str.c_str()[i];
 	}
 
 	return 0;
