@@ -157,7 +157,12 @@ enclave {
 			[in, size=dstp_len]uint8_t *disease_type, size_t dstp_len,
 			[out]size_t *sz);
 
+		int OCALL_get_key_and_vctx([in, out, size=sealed_key_size]uint8_t *sealed_key,
+			size_t sealed_key_size, [out]size_t *divnum, [in, size=17]char *filename);
 
+		int OCALL_get_IV_and_tag_for_VCF([in, out, size=iv_size]uint8_t *iv_array,
+			size_t iv_size, [in, out, size=tag_size]uint8_t *tag_array, 
+			size_t tag_size, [in, size=17]char *filename);
 	};
 };
 

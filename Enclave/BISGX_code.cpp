@@ -82,6 +82,8 @@ namespace Bbfunc
 		int vcf_or_list, int clinvar_flag);
 	extern double inquiryVCFContext(std::string chrom,
 		std::string nation, std::string disease_type);
+	extern double alleleFreqAnalysis(std::string chrom,
+		std::string position);
 }
 
 namespace Bmath
@@ -559,6 +561,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 			case Pow: case Sin: case Cos: case Tan: case Log: case Log10:
 			case Exp: case Sqrt: case Cbrt: case Ceil: case Absl: case DEO:
 			case Floor: case Round: case Rand: case SearchA: case InquiryVCF:
+			case AlleleF:
 				sysFncExec_syntax(kd);
 
 				break;
@@ -617,6 +620,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 		case Pow: case Sin: case Cos: case Tan: case Log: case Log10:
 		case Exp: case Sqrt: case Cbrt: case Ceil: case Absl: case DEO:
 		case Floor: case Round: case Rand: case SearchA: case InquiryVCF:
+		case AlleleF:	
 			sysFncExec(kd);
 
 			break;
@@ -926,6 +930,17 @@ void Bcode::sysFncExec_syntax(TknKind kd)
 
 			break;
 
+		case AlleleF:
+			code = nextCode();
+			code = chk_nextCode(code, '(');
+			code = chk_nextCode(code, String);
+			code = chk_nextCode(code, ',');
+			code = chk_nextCode(code, String);
+			code = chk_nextCode(code, ')');
+			stk.push(1.0);
+
+			break;
+
 		case Pow: case Rand:
 			code = nextCode();
 			code = chk_nextCode(code, '(');
@@ -980,6 +995,14 @@ void Bcode::sysFncExec(TknKind kd)
 	double d;
 	std::string s;
 
+	/* 
+	* Whether obtaining EofLine after RParen is up to you,
+	* but doing that is completely nonsense, because 
+	* EofLine will be ignored in next loop of statement()
+	* even if you don't obtain the EofLine after RParen.
+	*/
+
+
 	switch(kd)
 	{
 		case Toint:
@@ -1013,7 +1036,6 @@ void Bcode::sysFncExec(TknKind kd)
 			stk.push(temp);
 
 			code = nextCode(); //Need to skip RParen
-
 	
 			break;
 		}
@@ -1101,6 +1123,29 @@ void Bcode::sysFncExec(TknKind kd)
 
 			double temp = Bbfunc::inquiryVCFContext(chrom, 
 				nation, disease_type);
+
+			stk.push(temp);
+
+			break;
+		}
+
+		case AlleleF:
+		{
+			std::string chrom, position;
+
+			code = nextCode(); //LParen
+			code = nextCode(); //String
+
+			chrom = code.text;
+
+			code = nextCode(); //Comma
+			code = nextCode(); //String
+
+			position = code.text;
+
+			code = nextCode(); //Skip RParen
+
+			double temp = Bbfunc::alleleFreqAnalysis(chrom, position);
 
 			stk.push(temp);
 

@@ -170,6 +170,8 @@ public:
 		int div_total, string iv_array, string tag_array);
 	int do_inquiryVCTX(string chrom, string nation, string disease_type,
 		string *result);
+	size_t get_divnum(string filename);
+	int get_IV_and_tag(uint8_t *iv_b64, uint8_t *tag_b64, string filename);
 
 	/*
 	should be added is:
@@ -587,6 +589,81 @@ int BISGX_Database::do_inquiryVCTX(string chrom, string nation, string disease_t
 }
 
 
+size_t BISGX_Database::get_divnum(string filename)
+{
+	string cmd = "SELECT div_total FROM vcf_context WHERE tar_filename='";
+	cmd += filename;
+	cmd += "'";
+	
+	size_t divnum = 0;
+
+	try
+	{
+		res = stmt->executeQuery(cmd);
+		res->next();
+
+		divnum = atoi(res->getString("div_total").c_str());
+	}
+	catch(sql::SQLException &e)
+	{
+		cerr << "# ERR: SQLException in " << __FILE__;
+		cerr <<" on line " << __LINE__ << endl;
+		cerr << "# ERR: " << e.what() << endl;
+		cerr << " (MySQL error code: " << e.getErrorCode();
+		cerr << ", SQLState: " << e.getSQLState() << ")" << endl;
+
+		return -1;
+	}
+
+	return divnum;
+}
+
+
+int BISGX_Database::get_IV_and_tag(uint8_t *iv_b64, uint8_t *tag_b64, string filename)
+{
+	string cmd = "SELECT iv_array, tag_array FROM vcf_context WHERE tar_filename='";
+	cmd += filename;
+	cmd += "'";
+
+	string ivb64_str, tagb64_str;
+
+	try
+	{
+		res = stmt->executeQuery(cmd);
+		res->next();
+
+		ivb64_str = res->getString("iv_array");
+		tagb64_str = res->getString("tag_array");
+	}
+	catch(sql::SQLException &e)
+	{
+		cerr << "# ERR: SQLException in " << __FILE__;
+		cerr <<" on line " << __LINE__ << endl;
+		cerr << "# ERR: " << e.what() << endl;
+		cerr << " (MySQL error code: " << e.getErrorCode();
+		cerr << ", SQLState: " << e.getSQLState() << ")" << endl;
+
+		return -1;
+	}
+
+	size_t ivb64_len, tagb64_len;
+
+	ivb64_len = ivb64_str.length();
+	tagb64_len = tagb64_str.length();
+
+	for(int i = 0; i < ivb64_len; i++)
+	{
+		iv_b64[i] = (uint8_t)ivb64_str.c_str()[i];
+	}
+
+	for(int i = 0; i < tagb64_len; i++)
+	{
+		tag_b64[i] = (uint8_t)tagb64_str.c_str()[i];
+	}
+
+	return 0;
+}
+
 
 void OCALL_print(const char* message)
 {
@@ -764,6 +841,7 @@ int base64_decrypt(uint8_t *src, int srclen, uint8_t *dst, int dstlen)
 		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
 	};
 	int calclength = (srclen/4*3);
+	//cout << "\nINFO: calclength -> " << calclength << endl << endl;
 	int i,j;
 	if(calclength > dstlen || srclen % 4 != 0) return 0;
 	
@@ -987,6 +1065,7 @@ int OCALL_inquiryVCFContext(uint8_t *chrom, size_t chrm_len, uint8_t *nation,
 	return 0;
 }
 
+
 void OCALL_calc_inquiryDB_size(int *inquired_size)
 {
 	string inquiry_res = "";
@@ -995,6 +1074,7 @@ void OCALL_calc_inquiryDB_size(int *inquired_size)
 
 	*inquired_size = inquiry_res.length();
 }
+
 
 void OCALL_inquiryDB(uint8_t *inquiry_res, int buflen)
 {
@@ -1010,6 +1090,81 @@ void OCALL_inquiryDB(uint8_t *inquiry_res, int buflen)
 	{
 		inquiry_res[i] = dummy[i];
 	}
+}
+
+
+
+int OCALL_get_key_and_vctx(uint8_t *sealed_key, size_t sealed_key_size,
+	size_t *divnum, char *filename)
+{
+	string filepath = "sealed_keys/";
+	filepath += filename;
+	filepath += ".bin";
+
+	ifstream key_ifs(filepath, ios::in | ios::binary);
+
+	if(!key_ifs)
+	{
+		return -2;
+	}
+	
+
+	key_ifs.read((char*)sealed_key, sealed_key_size);
+
+	*divnum = bdb.get_divnum(string(filename));
+
+	if(*divnum == -1)
+	{
+		return -1;
+	}
+
+	return 0;
+}
+
+
+int OCALL_get_IV_and_tag_for_VCF(uint8_t *iv_array, size_t iv_size, uint8_t *tag_array,
+	size_t tag_size, char *filename)
+{
+	uint8_t *iv_b64 = new uint8_t[iv_size * 2]();
+	uint8_t *tag_b64 = new uint8_t[tag_size * 2]();
+
+
+	int ret = bdb.get_IV_and_tag(iv_b64, tag_b64, string(filename));
+
+	if(ret == -1)
+	{
+		delete(iv_b64);
+		delete(tag_b64);
+
+		return ret;
+	}
+
+
+	ret = base64_decrypt(iv_b64, strlen((char*)iv_b64), iv_array, iv_size + 128);
+
+	if(ret == 0)
+	{
+		delete(iv_b64);
+		delete(tag_b64);
+
+		return -2;
+	}
+
+
+	ret = base64_decrypt(tag_b64, strlen((char*)tag_b64), tag_array, tag_size + 128);
+
+	if(ret == 0)
+	{
+		delete(iv_b64);
+		delete(tag_b64);
+
+		return -3;
+	}
+
+	delete(iv_b64);
+	delete(tag_b64);
+
+	return 0;
 }
 
 
