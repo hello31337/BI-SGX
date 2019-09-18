@@ -1305,9 +1305,11 @@ int main(int argc, char *argv[])
 
 			/*obtain result contexts from received void* buffers*/
 			uint8_t *rcipherb64 = (uint8_t *) received_cipher;
+			//uint8_t *rcipherb64 = new uint8_t[rcipherb64_len]();
 			uint8_t *rivb64 	= (uint8_t *) received_iv;
 			uint8_t *rtagb64 	= (uint8_t *) received_tag;
 			uint8_t *rdeflenb64 = (uint8_t *) received_deflen;
+			uint8_t *void_to_uchar;
 
 			/*value check*/
 			cout << "Received base64-ed result cipher is: " << endl;
@@ -2854,7 +2856,7 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key,
     while(getline(*vcf_ifs, vcf_line))
     {
         divided_vcf += vcf_line + '\n';
-        part_size += vcf_line.length();
+        part_size += vcf_line.length() + 1;
 
         if(part_size > 20000000)
 		{
@@ -2882,7 +2884,11 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key,
             div_ofs.write((char*)vcf_cipher, vcf_cipher_len);
 
 			cout << "Processed " << divided_filename << " successfully.\n";
-		
+			/*
+			cout << "Tail length -> " << divided_vcf.length() << endl;
+			cout << "part_size -> " << part_size << endl << endl;
+			*/
+
             divided_vcf = "";
             part_size = 0;
 
@@ -2913,6 +2919,7 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key,
         }
     }
 
+
 	/* encrypt remained vcf */
     uint8_t *iv_temp = new uint8_t[12]();
     uint8_t *tag_temp = new uint8_t[16]();
@@ -2930,6 +2937,16 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key,
     vcf_cipher_len = encrypt_data_for_ISV((uint8_t*)divided_vcf.c_str(),
         part_size, sp_key, iv_temp, vcf_cipher, tag_temp);
 	
+	uint8_t *plaintext = new uint8_t[divided_vcf.length() + 1]();
+
+	int plain_size = decrypt_cipher_from_ISV(vcf_cipher, 
+		divided_vcf.length(), sp_key, iv_temp, 12, tag_temp, plaintext);
+
+	/*
+	cout << plaintext << endl;
+	cout << "\n\npart_size -> " << part_size << endl;
+	cout << "actual length -> " << divided_vcf.length() << endl << endl;
+	*/
 
 	for(int i = 0; i < 16; i++)
     {

@@ -562,7 +562,7 @@ int BISGX_Database::do_inquiryVCTX(string chrom, string nation, string disease_t
 			}
 		}
 
-		cout << "\n" << cmd << endl << endl;
+		//cout << "\n" << cmd << endl << endl;
 
 		res = stmt->executeQuery(cmd);
 
@@ -1168,7 +1168,86 @@ int OCALL_get_IV_and_tag_for_VCF(uint8_t *iv_array, size_t iv_size, uint8_t *tag
 }
 
 
-int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb, string *datatype_str)
+uint64_t OCALL_get_VCF_chunk_size(char *div_filename, size_t div_flnm_len, size_t index)
+{
+	string filepath = "encrypted_vcf/";
+	filepath += div_filename;
+	filepath += "/";
+	filepath += div_filename;
+	filepath += ".";
+	filepath += to_string(index);
+	
+	ifstream ifs(filepath, ios::in | ios::binary);
+
+	if(!ifs)
+	{
+		for(int i = 0; i < 256; i++)
+		{
+			ifs.open(filepath, ios::in | ios::binary);
+
+			if(ifs) break;
+		}
+
+		return -1;
+	}
+
+	uint64_t chunk_size = 0;
+
+	ifs.seekg(0, ios::end);
+	chunk_size = ifs.tellg();
+	ifs.seekg(0, ios::beg);
+
+	ifs.close();
+
+	return chunk_size;
+}
+
+
+int OCALL_load_VCF_chunk(uint8_t *vcf_chunk, uint64_t chunk_size, uint64_t offset, 
+	char *div_filename, size_t div_flnm_len, size_t index)
+{
+	string filepath = "encrypted_vcf/";
+	filepath += div_filename;
+	filepath += "/";
+	filepath += div_filename;
+	filepath += ".";
+	filepath += to_string(index);
+
+	ifstream ifs(filepath, ios::in | ios::binary);
+
+	
+	if(!ifs)
+	{
+		for(int i = 0; i < 256; i++)
+		{
+			ifs.open(filepath, ios::in | ios::binary);
+
+			if(!ifs) break;
+		}
+
+		return -1;
+	}
+	
+
+	ifs.seekg(offset, ios::beg);
+	ifs.read((char*)vcf_chunk, chunk_size);
+
+	
+	if(!ifs)
+	{
+		ifs.close();
+		return -2;
+	}
+	
+
+	ifs.close();
+
+	return 0;
+}
+
+
+int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb, 
+	string *datatype_str)
 {
 	int rv;
 	size_t sz;
@@ -2406,7 +2485,7 @@ int main (int argc, char *argv[])
 			}
 			else if(login_flag == 1)//Researcher
 			{
-				result_cipher = new uint8_t[2000000]();
+				result_cipher = new uint8_t[10000000]();
 
 				ecall_status = run_interpreter(eid, &retval, g_ra_ctx,
 					cipher_to_enclave, (size_t)deflen, iv_to_enclave,

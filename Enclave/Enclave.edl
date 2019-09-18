@@ -54,7 +54,7 @@ enclave {
 			[user_check]unsigned char *code_cipher, size_t cipherlen,
 			[in, out, size=12]unsigned char *p_iv,
 			[in, out, size=16]unsigned char *tag,
-			[in, out, size=2000000]unsigned char *result_cipher,
+			[in, out, size=10000000]unsigned char *result_cipher,
 			[out]size_t *res_len);
 
 		public sgx_status_t process_login_info(sgx_ra_context_t context,
@@ -163,6 +163,13 @@ enclave {
 		int OCALL_get_IV_and_tag_for_VCF([in, out, size=iv_size]uint8_t *iv_array,
 			size_t iv_size, [in, out, size=tag_size]uint8_t *tag_array, 
 			size_t tag_size, [in, size=17]char *filename);
+		
+		uint64_t OCALL_get_VCF_chunk_size([in, size=div_flnm_len]char *div_filename,
+			size_t div_flnm_len, size_t index);
+
+		int OCALL_load_VCF_chunk([in, out, size=chunk_size]uint8_t *vcf_chunk,
+			uint64_t chunk_size, uint64_t offset, [in, size=div_flnm_len]char *div_filename,
+			size_t div_flnm_len, size_t index);
 	};
 };
 

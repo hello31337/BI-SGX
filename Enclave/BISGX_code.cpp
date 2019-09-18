@@ -82,8 +82,8 @@ namespace Bbfunc
 		int vcf_or_list, int clinvar_flag);
 	extern double inquiryVCFContext(std::string chrom,
 		std::string nation, std::string disease_type);
-	extern double alleleFreqAnalysis(std::string chrom,
-		std::string position);
+	extern double VCFChunkLoader(std::string chrom,
+		std::string position, int mode);
 }
 
 namespace Bmath
@@ -1145,7 +1145,7 @@ void Bcode::sysFncExec(TknKind kd)
 
 			code = nextCode(); //Skip RParen
 
-			double temp = Bbfunc::alleleFreqAnalysis(chrom, position);
+			double temp = Bbfunc::VCFChunkLoader(chrom, position, 0);
 
 			stk.push(temp);
 

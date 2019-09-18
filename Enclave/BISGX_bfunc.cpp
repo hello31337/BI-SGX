@@ -51,8 +51,8 @@ namespace Bbfunc
 		int vcf_or_list, int clinvar_flag);
 	double inquiryVCFContext(std::string chrom, 
 		std::string nation, std::string disease_type);
-	double alleleFreqAnalysis(std::string chrom, 
-		std::string position);
+	double VCFChunkLoader(std::string chrom, 
+		std::string position, int mode);
 }
 
 namespace Bmain
@@ -798,7 +798,8 @@ double Bbfunc::inquiryVCFContext(std::string chrom,
 }
 
 
-double Bbfunc::alleleFreqAnalysis(std::string chrom, std::string position)
+double Bbfunc::VCFChunkLoader(std::string chrom, std::string position,
+	int mode)
 {
 	sgx_status_t status = SGX_SUCCESS;
 	uint8_t *dummy_array = new uint8_t[32]();
@@ -847,6 +848,13 @@ double Bbfunc::alleleFreqAnalysis(std::string chrom, std::string position)
 
 	do
 	{
+		if(strlen(token_div) != 16)
+		{
+			OCALL_print("Illegal filename detected ->");
+			OCALL_print(token_div);
+			break;
+		}
+
 		size_t sealed_key_size;
 		size_t divnum = 0;
 
@@ -941,13 +949,159 @@ double Bbfunc::alleleFreqAnalysis(std::string chrom, std::string position)
 			throw std::string("Failed to decode tag from base64.");
 		}
 
+		
+		/* start loading encrypted VCF */
+		for(int index = 0; index < divnum; index++)
+		{
+			size_t div_flnm_len = strlen(token_div);
+			uint64_t chunk_size = 0;
+
+			char *div_filename = new char[div_flnm_len + 1]();
+
+			for(int i = 0; i < div_flnm_len; i++)
+			{
+				div_filename[i] = token_div[i];
+			}
+
+			status = OCALL_get_VCF_chunk_size(&chunk_size, 
+				div_filename, div_flnm_len + 1, index);
+			
+
+			if(status != SGX_SUCCESS)
+			{
+				delete(sealed_key);
+				delete(flnm_to_pass);
+				delete(vcf_key);
+				delete(div_filename);
+
+				OCALL_print_status(status);
+				throw std::string("Internal SGX error.");
+			}
+
+			if(chunk_size == -1)
+			{
+				delete(sealed_key);
+				delete(flnm_to_pass);
+				delete(vcf_key);
+				delete(div_filename);
+				
+				throw std::string("Failed to open encrypted VCF chunk.");
+			}
+
+			OCALL_print_int(chunk_size);
+			
+			uint8_t *vcf_chunk = new uint8_t[chunk_size]();
+
+			/* need to divide chunks because of FUCKING OCALL STACK SPEC */
+			int chunk_round = chunk_size / 5000000;
+			uint64_t div_chunk_size = 0;
+
+			if(chunk_size % 5000000 != 0)
+			{
+				chunk_round++;
+			}
+
+			for(int i = 0; i < chunk_round; i++)
+			{
+				if((chunk_size % 5000000) != 0 && i == chunk_round - 1)
+				{
+					div_chunk_size = chunk_size % 5000000;
+				}
+				else
+				{
+					div_chunk_size = 5000000;
+				}
+
+				status = OCALL_load_VCF_chunk(&ocall_ret, vcf_chunk + i * 5000000,
+					div_chunk_size, i * 5000000, div_filename, div_flnm_len + 1, index);
+				
+
+				if(status != SGX_SUCCESS)
+				{
+					delete(sealed_key);
+					delete(flnm_to_pass);
+					delete(vcf_key);
+					delete(div_filename);
+					delete(vcf_chunk);
+
+					OCALL_print_status(status);
+					throw std::string("Internal SGX error.");
+				}
+
+
+				if(ocall_ret != 0)
+				{
+					delete(sealed_key);
+					delete(flnm_to_pass);
+					delete(vcf_key);
+					delete(div_filename);
+					delete(vcf_chunk);
+					
+					if(ocall_ret == -1)
+					{
+						throw std::string("Failed to open encrypted VCF chunk.");
+					}
+					else
+					{
+						throw std::string("Failed to read encrypted VCF chunk.");
+					}
+				}
+			}
+
+			/* execute decryption */
+			uint8_t *plain_vcf = new uint8_t[chunk_size + 1]();
+			uint8_t *iv_t = new uint8_t[12]();
+			sgx_aes_gcm_128bit_tag_t tag_t;
+
+			for(int i = 0; i < 12; i++)
+			{
+				iv_t[i] = iv_array[i + index * 12];
+			}
+
+			for(int i = 0; i < 16; i++)
+			{
+				tag_t[i] = tag_array[i + index * 16];
+			}
+
+			status = sgx_rijndael128GCM_decrypt((sgx_ec_key_128bit_t*)vcf_key, vcf_chunk, 
+				chunk_size, plain_vcf, iv_t, 12, NULL, 0, &tag_t);
+
+			if(status != SGX_SUCCESS)
+			{
+				OCALL_print_status(status);
+				throw std::string("Failed to decrypt stored VCF.");
+			}
+
+			/*
+			Bmain::result_str = "";
+			Bmain::result_str += (char*)plain_vcf;
+			*/
+
+			delete(vcf_chunk);
+			delete(div_filename);
+			delete(iv_t);
+			delete(plain_vcf);
+		}
+		
+		/*
+		int ofst = 0;
+		if(Bmain::result_str.length() > 7000000)
+		{
+			ofst = Bmain::result_str.length() - 7000000;
+		}
+
+		OCALL_print(Bmain::result_str.c_str() + ofst);
+		*/
 
 		delete(sealed_key);
 		delete(flnm_to_pass);
 		delete(vcf_key);
+		delete(iv_array);
+		delete(tag_array);
 
 	} while((token_div = strtok(NULL, "\n")) != NULL);
 
+	//Bmain::result_str = "";
 
 	return 0.0;
 }
