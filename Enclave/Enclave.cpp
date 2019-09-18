@@ -672,7 +672,7 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_ciphe
 
 	if(intp_result == "")
 	{
-		intp_result = "Info: Your program has successfully exited from interpreter, but there is no result output.";
+		intp_result = "Info: Your program has successfully exited from interpreter, \nbut there is no result output.";
 	}
 
 	uint8_t timebuf[64] = {'\0'};

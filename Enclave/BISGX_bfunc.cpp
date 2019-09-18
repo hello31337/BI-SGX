@@ -51,8 +51,8 @@ namespace Bbfunc
 		int vcf_or_list, int clinvar_flag);
 	double inquiryVCFContext(std::string chrom, 
 		std::string nation, std::string disease_type);
-	double VCFChunkLoader(std::string chrom, 
-		std::string position, int mode);
+	double VCFChunkLoader(std::string chrom, uint64_t position, 
+		std::string nation, std::string disease_type, int mode);
 }
 
 namespace Bmain
@@ -798,13 +798,27 @@ double Bbfunc::inquiryVCFContext(std::string chrom,
 }
 
 
-double Bbfunc::VCFChunkLoader(std::string chrom, std::string position,
-	int mode)
+double Bbfunc::VCFChunkLoader(std::string chrom, uint64_t position,
+	std::string nation, std::string disease_type, int mode)
 {
 	sgx_status_t status = SGX_SUCCESS;
 	uint8_t *dummy_array = new uint8_t[32]();
 	int ocall_ret = 0;
 	size_t est_sz;
+
+	
+	/* declare variables for every modes; only one part will be used */
+	/* for allele frequency analysis */
+	typedef struct
+	{
+		std::string major_allele;
+		std::string minor_allele;
+		double allele_freq;
+		int major_num;
+		int minor_num;
+	} alleleFreq_t;
+
+	alleleFreq_t alfq = {"", "", 0.0, 0, 0};
 
 
 	/* calculate entire size of filenames */
@@ -1072,10 +1086,11 @@ double Bbfunc::VCFChunkLoader(std::string chrom, std::string position,
 				throw std::string("Failed to decrypt stored VCF.");
 			}
 
-			/*
-			Bmain::result_str = "";
-			Bmain::result_str += (char*)plain_vcf;
-			*/
+
+			if(mode == 0) // allele frequency analysis
+			{
+				
+			}
 
 			delete(vcf_chunk);
 			delete(div_filename);
@@ -1083,15 +1098,7 @@ double Bbfunc::VCFChunkLoader(std::string chrom, std::string position,
 			delete(plain_vcf);
 		}
 		
-		/*
-		int ofst = 0;
-		if(Bmain::result_str.length() > 7000000)
-		{
-			ofst = Bmain::result_str.length() - 7000000;
-		}
-
-		OCALL_print(Bmain::result_str.c_str() + ofst);
-		*/
+		
 
 		delete(sealed_key);
 		delete(flnm_to_pass);
