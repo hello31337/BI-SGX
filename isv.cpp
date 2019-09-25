@@ -562,7 +562,7 @@ int BISGX_Database::do_inquiryVCTX(string chrom, string nation, string disease_t
 			}
 		}
 
-		//cout << "\n" << cmd << endl << endl;
+		// cout << "\n" << cmd << endl << endl;
 
 		res = stmt->executeQuery(cmd);
 
@@ -2269,10 +2269,13 @@ int main (int argc, char *argv[])
 
 			/* destruct heaps */
 			delete(tar_filename);
+			cout << "tar_filename deleted." << endl;
 			delete(vctx_cipher);
+			cout << "vctx_cipher deleted." << endl;
 			delete(iv_vctx);
+			cout << "iv_vctx deleted." << endl;
 			delete(tag_vctx);
-			delete(vctx_cipher);
+			cout << "tag_vctx deleted." << endl << endl;
 		}
 		else
 		{

@@ -642,9 +642,9 @@ sgx_status_t run_interpreter(sgx_ra_context_t context, unsigned char *code_ciphe
 	std::string intp_result = "";
 
 	
-	//OCALL_chrono_start();
+	OCALL_chrono_start();
 	intp_result = BISGX_main(intp_str, &intp_error_flag, &intp_error_msg);
-	//OCALL_chrono_end();
+	OCALL_chrono_end();
 	
 
 	/*

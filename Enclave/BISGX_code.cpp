@@ -82,8 +82,8 @@ namespace Bbfunc
 		int vcf_or_list, int clinvar_flag);
 	extern double inquiryVCFContext(std::string chrom,
 		std::string nation, std::string disease_type);
-	extern double VCFChunkLoader(std::string chrom,
-		std::string position, int mode);
+	extern double VCFChunkLoader(std::string chrom, uint64_t position, 
+		std::string nation, std::string disease_type, int mode);
 }
 
 namespace Bmath
@@ -935,6 +935,10 @@ void Bcode::sysFncExec_syntax(TknKind kd)
 			code = chk_nextCode(code, '(');
 			code = chk_nextCode(code, String);
 			code = chk_nextCode(code, ',');
+			(void)get_expression();
+			code = chk_nextCode(code, ',');
+			code = chk_nextCode(code, String);
+			code = chk_nextCode(code, ',');
 			code = chk_nextCode(code, String);
 			code = chk_nextCode(code, ')');
 			stk.push(1.0);
@@ -1131,7 +1135,8 @@ void Bcode::sysFncExec(TknKind kd)
 
 		case AlleleF:
 		{
-			std::string chrom, position;
+			std::string chrom, nation, disease_type;
+			uint64_t position;
 
 			code = nextCode(); //LParen
 			code = nextCode(); //String
@@ -1139,13 +1144,28 @@ void Bcode::sysFncExec(TknKind kd)
 			chrom = code.text;
 
 			code = nextCode(); //Comma
+			
+			position = get_expression(',', ',');
+
+			nation = code.text; //current token is already string
+
+			code = nextCode(); //Comma
 			code = nextCode(); //String
 
-			position = code.text;
+			disease_type = code.text;
 
 			code = nextCode(); //Skip RParen
 
-			double temp = Bbfunc::VCFChunkLoader(chrom, position, 0);
+			/*
+			OCALL_print("INFO: parse check ->");
+			OCALL_print(chrom.c_str());
+			OCALL_print_int(position);
+			OCALL_print(nation.c_str());
+			OCALL_print(disease_type.c_str());
+			*/
+
+			double temp = Bbfunc::VCFChunkLoader(chrom, position, 
+				nation, disease_type, 0);
 
 			stk.push(temp);
 

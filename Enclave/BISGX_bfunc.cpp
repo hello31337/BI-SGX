@@ -41,6 +41,16 @@
 	
 #define NUM_OF_AA 20
 
+
+typedef struct AlleleFreq_t
+{
+	std::vector<std::string> alleles; // string of allele seq. [0]:major, [>1]:minor
+	double allele_freq;
+	std::vector<uint64_t> allele_num; // total of each allele, e.g. 0, 1, 2, ...
+	bool is_init;
+} AlleleFreq_t;
+
+
 namespace Bbfunc
 {
 	/*protos*/
@@ -266,7 +276,6 @@ unsigned int edit_distance_fixed_1_(T const &a, T const &b) {
     for(size_t i = 0; i < a.size(); ++i) cmap[a[i]] |= (1L << i);
     return edit_distance_bp<std::map<char, uint64_t>, std::string>(cmap, b, a.size());
 }
-
 
 
 
@@ -824,6 +833,94 @@ double Bbfunc::inquiryVCFContext(std::string chrom,
 }
 
 
+
+double AlleleFreqAnalysis(uint8_t *plain_vcf, AlleleFreq_t *alfq,
+	std::string chrom, uint64_t position, std::string nation,
+	std::string disease_type, int match_flag)
+{
+	/* 
+	 * ignoring conditions: 
+	 *  - chrom, nation, disease_type -> empty string
+	 *  - position: -
+	 */
+
+	//memo: write 4 independent if sentence and compare with
+	//vcf line obtained by strtok_r.
+	
+	char *tail_line_tk;
+	char *line_token = strtok_r((char*)plain_vcf, "\n", &tail_line_tk);
+
+	do
+	{
+		if(match_flag == 0) continue;
+		if(line_token[0] == '#') continue;
+
+
+		/* start parsing vcf line */
+		char *tail_column_tk;
+		char *column_token = strtok_r(line_token, "\t", &tail_column_tk);
+
+		/* compare chromosome number */
+		if(chrom != "")
+		{
+			if(column_token != chrom) continue;
+		}
+
+
+		/* compare position */
+		column_token = strtok_r(NULL, "\t", &tail_column_tk);
+		
+		if(position >= 0)
+		{
+			if(strtoul(column_token, NULL, 10) != position) continue;
+		}
+
+
+		/* discard refID */
+		column_token = strtok_r(NULL, "\t", &tail_column_tk);
+
+
+		/* obtain SNP info */
+		if(alfq->is_init == false)
+		{
+			alfq->is_init = true;
+
+			/* major allele */
+			column_token = strtok_r(NULL, "\t", &tail_column_tk);
+			alfq->alleles.push_back(column_token);
+			alfq->allele_num.push_back(0);
+
+
+			/* minor alleles */
+			column_token = strtok_r(NULL, "\t", &tail_column_tk);
+
+
+			char *tail_snp_tk;
+			char *snp_token = strtok_r(column_token, ",", &tail_snp_tk);
+
+			do
+			{
+				alfq->alleles.push_back(snp_token);
+				alfq->allele_num.push_back(0);
+			}
+			while ((snp_token = strtok_r(NULL, ",", &tail_snp_tk)) != NULL);
+
+		}
+		else
+		{
+			/* discard tokens */
+			column_token = strtok_r(NULL, "\t", &tail_column_tk);
+			column_token = strtok_r(NULL, "\t", &tail_column_tk);
+		}
+
+	}
+	while ((line_token = strtok_r(NULL, "\n", &tail_line_tk)) != NULL);
+	
+	return 0.0;
+}
+
+
+
 double Bbfunc::VCFChunkLoader(std::string chrom, uint64_t position,
 	std::string nation, std::string disease_type, int mode)
 {
@@ -831,20 +928,14 @@ double Bbfunc::VCFChunkLoader(std::string chrom, uint64_t position,
 	uint8_t *dummy_array = new uint8_t[32]();
 	int ocall_ret = 0;
 	size_t est_sz;
+	double final_ret;
 
 	
 	/* declare variables for every modes; only one part will be used */
 	/* for allele frequency analysis */
-	typedef struct
-	{
-		std::string major_allele;
-		std::string minor_allele;
-		double allele_freq;
-		int major_num;
-		int minor_num;
-	} alleleFreq_t;
-
-	alleleFreq_t alfq = {"", "", 0.0, 0, 0};
+	AlleleFreq_t alfq;
+	alfq.allele_freq = 0.0;
+	alfq.is_init = false;
 
 
 	/* calculate entire size of filenames */
@@ -881,22 +972,149 @@ double Bbfunc::VCFChunkLoader(std::string chrom, uint64_t position,
 	}
 
 
+
+	/* calculate entire size of filenames matching with conditions */
+	size_t natn_len, dstp_len;
+
+	natn_len = nation.length();
+	dstp_len = disease_type.length();
+
+
+	uint8_t *nation_uchar = new uint8_t[natn_len + 1]();
+	uint8_t *disease_type_uchar = new uint8_t[dstp_len + 1]();
+
+
+	for(int i = 0; i < natn_len; i++)
+	{
+		nation_uchar[i] = (uint8_t)nation.c_str()[i];
+	}
+
+	for(int i = 0; i < dstp_len; i++)
+	{
+		disease_type_uchar[i] = (uint8_t)disease_type.c_str()[i];
+	}
+
+	uint8_t *natn_hash = new uint8_t[32]();
+	uint8_t *dstp_hash = new uint8_t[32]();
+
+
+	if(natn_len > 1)
+	{
+		status = sgx_sha256_msg(nation_uchar, natn_len,
+			(sgx_sha256_hash_t*)natn_hash);
+
+		if(status != SGX_SUCCESS)
+		{
+			throw std::string("Failed to obtain sha256 hash.");
+		}
+	}
+
+
+	if(dstp_len > 1)
+	{
+		status = sgx_sha256_msg(disease_type_uchar, dstp_len,
+			(sgx_sha256_hash_t*)dstp_hash);
+
+		if(status != SGX_SUCCESS)
+		{
+			throw std::string("Failed to obtain sha256 hash.");
+		}
+	}
+
+
+	status = OCALL_calc_inquiryVCTX_size(&ocall_ret, dummy_array, 32, 
+		natn_hash, 32, dstp_hash, 32, &est_sz);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print_status(status);
+		throw std::string("Internal SGX error.");
+	}
+
+	if(ocall_ret != 0)
+	{
+		throw std::string("Error has occurred while querying MySQL.");
+	}
+
+
+	/* obtain filename list matching with conditions */
+
+	/*
+	 * To more strictly control output privacy, you should seal 
+	 * nations and disease_types, then unseal them when inquirying.
+	 */
+
+	char *matched_filenames = new char[est_sz + 1]();
+	
+	status = OCALL_inquiryVCFContext(&ocall_ret, dummy_array, 32,
+		natn_hash, 32, dstp_hash, 32, matched_filenames, est_sz);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print_status(status);
+		throw std::string("Internal SGX error.");
+	}
+
+	if(ocall_ret != 0)
+	{
+		throw std::string("Error has occurred while querying MySQL.");
+	}
+
+
+	/* generate matched filename vector */
+	std::vector<std::string> matched_list;
+	
+	char *matched_token = strtok(matched_filenames, "\n");
+
+	do
+	{
+		matched_list.push_back(matched_token);
+	}
+	while ((matched_token = strtok(NULL, "\n")) != NULL);
+
+
+	for(int i = 0; i < matched_list.size(); i++)
+	{
+		OCALL_print(matched_list[i].c_str());
+	}
+
+
 	/* process for every filenames */
+	int match_index = 0;
 	char *token_div;
+	std::vector<std::string> filename_vec;
 
 	token_div = strtok((char*)filename_list, "\n");
 
 	do
 	{
-		if(strlen(token_div) != 16)
+		filename_vec.push_back(token_div);
+	}
+	while ((token_div = strtok(NULL, "\n")) != NULL);
+
+
+	for(int idx = 0; idx < filename_vec.size(); idx++)
+	{
+		int match_flag = 0;
+
+		if(matched_list.size() > 0 && match_index < matched_list.size())
+		{
+			if(filename_vec[idx] == matched_list[match_index])
+			{
+				match_flag = 1;
+				match_index++;
+			}
+		}
+
+		if(filename_vec[idx].length() != 16)
 		{
 			OCALL_print("Illegal filename detected ->");
-			OCALL_print(token_div);
+			OCALL_print(filename_vec[idx].c_str());
 			break;
 		}
 
 		std::string disp_str = "\nProcessing ";
-		disp_str += token_div;
+		disp_str += filename_vec[idx];
 		disp_str += " ->";
 
 		OCALL_print(disp_str.c_str());
@@ -911,7 +1129,7 @@ double Bbfunc::VCFChunkLoader(std::string chrom, uint64_t position,
 
 		for(int i = 0; i < 16; i++)
 		{
-			flnm_to_pass[i] = token_div[i];
+			flnm_to_pass[i] = filename_vec[idx].c_str()[i];
 		}
 
 		status = OCALL_get_key_and_vctx(&ocall_ret, sealed_key, 
@@ -999,14 +1217,14 @@ double Bbfunc::VCFChunkLoader(std::string chrom, uint64_t position,
 		/* start loading encrypted VCF */
 		for(int index = 0; index < divnum; index++)
 		{
-			size_t div_flnm_len = strlen(token_div);
+			size_t div_flnm_len = filename_vec[idx].length();
 			uint64_t chunk_size = 0;
 
 			char *div_filename = new char[div_flnm_len + 1]();
 
 			for(int i = 0; i < div_flnm_len; i++)
 			{
-				div_filename[i] = token_div[i];
+				div_filename[i] = filename_vec[idx][i];
 			}
 
 			status = OCALL_get_VCF_chunk_size(&chunk_size, 
@@ -1121,16 +1339,16 @@ double Bbfunc::VCFChunkLoader(std::string chrom, uint64_t position,
 
 			if(mode == 0) // allele frequency analysis
 			{
-				
+				final_ret = AlleleFreqAnalysis(plain_vcf, &alfq, chrom,
+					position, nation, disease_type, match_flag);
 			}
 
 			delete(vcf_chunk);
 			delete(div_filename);
 			delete(iv_t);
 			delete(plain_vcf);
-		}
-		
-		
+		}	
+
 
 		delete(sealed_key);
 		delete(flnm_to_pass);
@@ -1138,7 +1356,7 @@ double Bbfunc::VCFChunkLoader(std::string chrom, uint64_t position,
 		delete(iv_array);
 		delete(tag_array);
 
-	} while((token_div = strtok(NULL, "\n")) != NULL);
+	} //while((token_div = strtok(NULL, "\n")) != NULL);
 
 	//Bmain::result_str = "";
 
