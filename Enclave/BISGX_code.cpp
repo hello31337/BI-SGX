@@ -83,7 +83,10 @@ namespace Bbfunc
 	extern double inquiryVCFContext(std::string chrom,
 		std::string nation, std::string disease_type);
 	extern double VCFChunkLoader(std::string chrom, uint64_t position, 
-		std::string nation, std::string disease_type, int mode);
+		std::string nation, std::string disease_type, int mode,
+		std::string &query);
+	extern double VCFChunkLoader_FET(std::string chrom, std::string nation, 
+		std::string disease_type, std::string &query);
 }
 
 namespace Bmath
@@ -561,7 +564,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 			case Pow: case Sin: case Cos: case Tan: case Log: case Log10:
 			case Exp: case Sqrt: case Cbrt: case Ceil: case Absl: case DEO:
 			case Floor: case Round: case Rand: case SearchA: case InquiryVCF:
-			case AlleleF:
+			case AlleleF: case Fisher:
 				sysFncExec_syntax(kd);
 
 				break;
@@ -620,7 +623,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 		case Pow: case Sin: case Cos: case Tan: case Log: case Log10:
 		case Exp: case Sqrt: case Cbrt: case Ceil: case Absl: case DEO:
 		case Floor: case Round: case Rand: case SearchA: case InquiryVCF:
-		case AlleleF:	
+		case AlleleF: case Fisher:
 			sysFncExec(kd);
 
 			break;
@@ -945,6 +948,21 @@ void Bcode::sysFncExec_syntax(TknKind kd)
 
 			break;
 
+		case Fisher:
+			code = nextCode();
+			code = chk_nextCode(code, '(');
+			code = chk_nextCode(code, String);
+			code = chk_nextCode(code, ',');
+			code = chk_nextCode(code, String);
+			code = chk_nextCode(code, ',');
+			code = chk_nextCode(code, String);
+			code = chk_nextCode(code, ',');
+			code = chk_nextCode(code, String);
+			code = chk_nextCode(code, ')');
+			stk.push(1.0);
+
+			break;
+
 		case Pow: case Rand:
 			code = nextCode();
 			code = chk_nextCode(code, '(');
@@ -1164,8 +1182,44 @@ void Bcode::sysFncExec(TknKind kd)
 			OCALL_print(disease_type.c_str());
 			*/
 
+			std::string dummy_query = "";
+
 			double temp = Bbfunc::VCFChunkLoader(chrom, position, 
-				nation, disease_type, 0);
+				nation, disease_type, 0, dummy_query);
+
+			stk.push(temp);
+
+			break;
+		}
+
+		case Fisher:
+		{
+			std::string chrom, nation, disease_type, query;
+
+			code = nextCode(); //LParen
+			code = nextCode(); //String
+
+			chrom = code.text;
+
+			code = nextCode(); //Comma
+			code = nextCode(); //String
+
+			query = code.text; //obtain POS query
+
+			code = nextCode(); //Comma
+			code = nextCode(); //String
+
+			nation = code.text;
+
+			code = nextCode(); //Comma
+			code = nextCode(); //String
+
+			disease_type = code.text;
+
+			code = nextCode(); //Skip RParen
+
+			double temp = Bbfunc::VCFChunkLoader_FET(chrom, nation,
+				disease_type,  query);
 
 			stk.push(temp);
 

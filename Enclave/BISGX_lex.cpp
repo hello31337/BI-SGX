@@ -63,6 +63,7 @@ namespace Blex
 		{"ceil"		, Ceil	}, {"round"		, Round	},
 		{"rand"		, Rand	}, {"searchAnnotation", SearchA },
 		{"inquiryVCF", InquiryVCF}, {"alleleFreq", AlleleF},
+		{"fisherExactTest", Fisher},
 		{"DAMMERUNG_EYES_ONLY", DEO}, {"exit"		, Exit	},
 		{"("	, Lparen	}, {")"		, Rparen	},
 		{"["	, Lbracket	}, {"]"		, Rbracket	},
@@ -150,6 +151,13 @@ void Blex::nextLine()
 
 	for(int i = 0; i < LIN_SIZ + 5; i++)
 	{
+		//changed part
+		if(i >= istr_len)
+		{
+			endOfFile_F = true;
+			return;
+		}
+
 		if(inputstr[strindex] == '\n')
 		{
 			buf[i] = '\0';

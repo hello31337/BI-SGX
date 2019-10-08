@@ -103,6 +103,7 @@ void Bparse::convert_to_internalCode(std::string code)
 	push_intercode();
 	Blex::BufferInit(code);
 
+
 	token = Blex::nextLine_tkn();
 
 	while(token.kind != EofProg)

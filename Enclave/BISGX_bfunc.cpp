@@ -13,6 +13,7 @@
 #include <map>
 #include <bitset>
 #include <array>
+#include <limits.h>
 
 #define gap_penalty -6
 #define gap_open 0
@@ -50,6 +51,13 @@ typedef struct AlleleFreq_t
 	bool is_init;
 } AlleleFreq_t;
 
+typedef struct FisherTest_t
+{
+	std::vector<char> zero_total;
+	std::vector<char> one_total;
+	std::vector<char> two_total;
+} FisherTest_t;
+
 
 namespace Bbfunc
 {
@@ -62,7 +70,10 @@ namespace Bbfunc
 	double inquiryVCFContext(std::string chrom, 
 		std::string nation, std::string disease_type);
 	double VCFChunkLoader(std::string chrom, uint64_t position, 
-		std::string nation, std::string disease_type, int mode);
+		std::string nation, std::string disease_type, int mode,
+		std::string &query);
+	double VCFChunkLoader_FET(std::string chrom, std::string nation, 
+		std::string disease_type, std::string &query);
 }
 
 namespace Bmain
@@ -913,6 +924,71 @@ double AlleleFreqAnalysis(uint8_t *plain_vcf, AlleleFreq_t *alfq,
 			column_token = strtok_r(NULL, "\t", &tail_column_tk);
 		}
 
+		/* discard QUAL, FILTER, INFO, FORMAT */
+		for(int i = 0; i < 4; i++)
+		{
+			column_token = strtok_r(NULL, "\t", &tail_column_tk);
+		}
+
+
+		/* start parsing allele data */
+		/* WARNING: haploid is currently NOT SUPPORTED */
+		while((column_token = strtok_r(NULL, "\t", &tail_column_tk)) != NULL)
+		{
+			/* truncate extra formats */
+			char *pair_token;
+			char *tail_pair_tk;
+
+			pair_token = strtok_r(column_token, ";", &tail_pair_tk);
+
+			std::string allele1 = "";
+			std::string allele2 = "";
+			int token_index = 0;
+			
+			size_t pair_tk_size = strlen(pair_token);
+
+			/* obtain allele1 */
+			if(pair_token[token_index] == '.')
+			{
+				token_index += 2;
+			}
+			else
+			{
+				while(pair_token[token_index] != '|' && pair_token[token_index] != '/')
+				{
+					allele1 += pair_token[token_index];
+					token_index++;
+				}
+
+				token_index++;
+			}
+			
+			/* obtain allele2 */
+			if(pair_token[token_index] != '.')
+			{
+				while(token_index < pair_tk_size)
+				{
+					allele2 += pair_token[token_index];
+					token_index++;
+				}
+			}
+
+			int allele1_int, allele2_int;
+
+			/* count up allele */
+			if(allele1.length() > 0)
+			{
+				allele1_int = atoi(allele1.c_str());
+				alfq->allele_num[allele1_int]++;
+			}
+
+			if(allele2.length() > 0)
+			{
+				allele2_int = atoi(allele2.c_str());
+				alfq->allele_num[allele2_int]++;
+			}
+		}
+
 	}
 	while ((line_token = strtok_r(NULL, "\n", &tail_line_tk)) != NULL);
 	
@@ -920,9 +996,78 @@ double AlleleFreqAnalysis(uint8_t *plain_vcf, AlleleFreq_t *alfq,
 }
 
 
+void FET_Swap(std::vector<uint64_t> &vec, uint64_t i, uint64_t j)
+{
+	int temp;
+	temp = vec[i];
+	vec[i] = vec[j];
+	vec[j] = temp;
+}
+
+
+void FET_QuickSort(std::vector<uint64_t> &vec, uint64_t left, uint64_t right)
+{
+	int i, j, pivot;
+
+	i = left;
+	j = right;
+
+	pivot = vec[(left + right) / 2];
+
+	while(1)
+	{
+		while(vec[i] < pivot)
+		{
+			i++;
+		}
+
+		while(pivot < vec[j])
+		{
+			j--;
+		}
+
+		if(i >= j) break;
+
+		FET_Swap(vec, i, j);
+
+		i++;
+		j--;
+	}
+
+	if(left < i - 1)
+	{
+		FET_QuickSort(vec, left, i - 1);
+	}
+
+	if(j + 1 < right)
+	{
+		FET_QuickSort(vec, j + 1, right);
+	}
+}
+
+
+double FisherExactTest(uint8_t *plain_vcf, FisherTest_t *fst, 
+	std::string chrom, std::vector<uint64_t> &pos_query, std::string nation, 
+	std::string disease_type, int match_flag)
+{
+	/*
+	 * 1. convert query to array of uint64_t
+	 * 2. sort the array
+	 * 3. compare with actual position and skip query if need
+	*/
+
+	std::vector<std::vector<uint64_t>> vec;
+	vec.emplace_back();
+	vec[0].push_back(1337);
+
+
+	return 0.0;
+}
+
 
 double Bbfunc::VCFChunkLoader(std::string chrom, uint64_t position,
-	std::string nation, std::string disease_type, int mode)
+	std::string nation, std::string disease_type, int mode, 
+	std::string &query)
 {
 	sgx_status_t status = SGX_SUCCESS;
 	uint8_t *dummy_array = new uint8_t[32]();
@@ -937,6 +1082,9 @@ double Bbfunc::VCFChunkLoader(std::string chrom, uint64_t position,
 	alfq.allele_freq = 0.0;
 	alfq.is_init = false;
 
+	
+	/* For Fisher's Exact Test */
+	FisherTest_t fet;
 
 	/* calculate entire size of filenames */
 	status = OCALL_calc_inquiryVCTX_size(&ocall_ret, dummy_array, 32, 
@@ -1342,6 +1490,65 @@ double Bbfunc::VCFChunkLoader(std::string chrom, uint64_t position,
 				final_ret = AlleleFreqAnalysis(plain_vcf, &alfq, chrom,
 					position, nation, disease_type, match_flag);
 			}
+			else if(mode == 1) // Fisher's exact test
+			{
+				std::vector<uint64_t> pos_query;
+
+				char *pos_token;
+				char *tail_pos_tk;
+				
+				if(query == "")
+				{
+					Bmain::result_str = "No matched result.";
+					return -1.0;
+				}
+
+				pos_token = strtok_r((char*)query.c_str(), ";", &tail_pos_tk);
+
+				do
+				{
+					pos_query.push_back(strtoul(pos_token, NULL, 10));
+				}
+				while((pos_token = strtok_r(NULL, ";", &tail_pos_tk)) != NULL);
+
+				/* sort query array */
+				uint64_t max_idx = 0, min_idx = 0;
+				uint64_t max_pos = 0;
+				uint64_t min_pos = ULONG_MAX;
+				int query_size = pos_query.size();
+
+
+				for(int i = 0; i < query_size; i++)
+				{
+					if(pos_query[i] < min_pos)
+					{
+						min_pos = pos_query[i];
+						min_idx = i;
+					}
+					else if(pos_query[i] > max_pos)
+					{
+						max_pos = pos_query[i];
+						max_idx = i;
+					}
+				}
+
+				for(int i = 0; i < query_size; i++)
+				{
+					OCALL_print_int(pos_query[i]);
+				}
+
+				FET_QuickSort(pos_query, min_idx, max_idx);
+
+				for(int i = 0; i < query_size; i++)
+				{
+					OCALL_print_int(pos_query[i]);
+				}
+
+				final_ret = FisherExactTest(plain_vcf, &fet, chrom, 
+					pos_query, nation, disease_type, match_flag);
+				
+
+			}
 
 			delete(vcf_chunk);
 			delete(div_filename);
@@ -1358,6 +1565,638 @@ double Bbfunc::VCFChunkLoader(std::string chrom, uint64_t position,
 
 	} //while((token_div = strtok(NULL, "\n")) != NULL);
 
+	/* finalize result */
+	if(mode == 0)
+	{
+		uint64_t allele_total = 0;
+
+		if(alfq.allele_num.size() == 0)
+		{
+			Bmain::result_str += "No matched alleles.\n";
+			return -1.0;
+		}
+
+		for(int i = 0; i < alfq.allele_num.size(); i++)
+		{
+			allele_total += alfq.allele_num[i];
+		}
+
+		/* display allele frequencies */
+		Bmain::result_str += "Major allele: ";
+		Bmain::result_str += alfq.alleles[0];
+		Bmain::result_str += " ---> ";
+		Bmain::result_str += 
+				std::to_string(((double)alfq.allele_num[0] / (double)allele_total) * 100);
+		Bmain::result_str += "%\n";
+
+		for(int i = 1; i < alfq.allele_num.size(); i++)
+		{
+			Bmain::result_str += "Minor allele[";
+			Bmain::result_str += std::to_string(i);
+			Bmain::result_str += "]: ";
+			Bmain::result_str += alfq.alleles[i];
+			Bmain::result_str += " ---> ";
+			Bmain::result_str += 
+					std::to_string(((double)alfq.allele_num[i] / (double)allele_total) * 100);
+			Bmain::result_str += "%\n";
+		}
+
+	}
+	
+	//Bmain::result_str = "";
+
+	return 0.0;
+}
+
+
+double Bbfunc::VCFChunkLoader_FET(std::string chrom, std::string nation, 
+	std::string disease_type, std::string &query)
+{
+	sgx_status_t status = SGX_SUCCESS;
+	uint8_t *dummy_array = new uint8_t[32]();
+	int ocall_ret = 0;
+	size_t est_sz;
+	double final_ret;
+
+	
+	/* For Fisher's Exact Test */
+	FisherTest_t fet;
+
+
+	/* parse query to vector */
+	std::vector<uint64_t> pos_query;
+
+	char *pos_token;
+	char *tail_pos_tk;
+	
+	if(query == "")
+	{
+		Bmain::result_str = "No matched result.";
+		return -1.0;
+	}
+
+	pos_token = strtok_r((char*)query.c_str(), ";", &tail_pos_tk);
+
+	do
+	{
+		pos_query.push_back(strtoul(pos_token, NULL, 10));
+	}
+	while((pos_token = strtok_r(NULL, ";", &tail_pos_tk)) != NULL);
+
+
+	/* sort query array */
+	uint64_t max_idx = 0, min_idx = 0;
+	uint64_t max_pos = 0;
+	uint64_t min_pos = ULONG_MAX;
+	int query_size = pos_query.size();
+
+
+	for(int i = 0; i < query_size; i++)
+	{
+		if(pos_query[i] < min_pos)
+		{
+			min_pos = pos_query[i];
+			min_idx = i;
+		}
+		else if(pos_query[i] > max_pos)
+		{
+			max_pos = pos_query[i];
+			max_idx = i;
+		}
+	}
+
+	FET_QuickSort(pos_query, min_idx, max_idx);
+
+
+
+	/* calculate entire size of filenames */
+	status = OCALL_calc_inquiryVCTX_size(&ocall_ret, dummy_array, 32, 
+		dummy_array, 32, dummy_array, 32, &est_sz);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print_status(status);
+		throw std::string("Internal SGX error.");
+	}
+
+	if(ocall_ret != 0)
+	{
+		throw std::string("Error has occurred while querying MySQL.");
+	}
+
+
+	/* obtain filename list */
+	char *filename_list = new char[est_sz + 1]();
+	
+	status = OCALL_inquiryVCFContext(&ocall_ret, dummy_array, 32,
+		dummy_array, 32, dummy_array, 32, filename_list, est_sz);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print_status(status);
+		throw std::string("Internal SGX error.");
+	}
+
+	if(ocall_ret != 0)
+	{
+		throw std::string("Error has occurred while querying MySQL.");
+	}
+
+	
+	/* parse nation list */
+	std::vector<std::string> nation_list;
+
+	char *nation_token = strtok((char*)nation.c_str(), ";");
+
+	do
+	{
+		nation_list.push_back(nation_token);
+	}
+	while ((nation_token = strtok(NULL, ";"))!= NULL);
+
+	if(nation_list.size() < 2)
+	{
+		throw std::string("2 or more nations must be designated.");
+	}
+
+	
+
+	/* calculate entire size of filenames matching with conditions */
+	/* loop for every nations designated in script code */
+	std::vector<std::vector<std::string>> natn_flnm_list;
+	std::vector<int> nation_index;
+	size_t nlist_size = nation_list.size();
+
+	for(int i = 0; i < nlist_size; i++)
+	{
+		natn_flnm_list.emplace_back();
+		nation_index.push_back(0);
+	}
+
+	/* query filenames for every nations */
+	for(int nidx = 0; nidx < nlist_size; nidx++)
+	{
+		size_t natn_len, dstp_len;
+
+		natn_len = nation_list[nidx].length();
+		dstp_len = disease_type.length();
+
+
+		uint8_t *nation_uchar = new uint8_t[natn_len + 1]();
+		uint8_t *disease_type_uchar = new uint8_t[dstp_len + 1]();
+
+
+		for(int i = 0; i < natn_len; i++)
+		{
+			nation_uchar[i] = (uint8_t)nation_list[nidx].c_str()[i];
+		}
+
+		for(int i = 0; i < dstp_len; i++)
+		{
+			disease_type_uchar[i] = (uint8_t)disease_type.c_str()[i];
+		}
+
+		uint8_t *natn_hash = new uint8_t[32]();
+		uint8_t *dstp_hash = new uint8_t[32]();
+
+
+		if(natn_len > 1)
+		{
+			status = sgx_sha256_msg(nation_uchar, natn_len,
+				(sgx_sha256_hash_t*)natn_hash);
+
+			if(status != SGX_SUCCESS)
+			{
+				throw std::string("Failed to obtain sha256 hash.");
+			}
+		}
+
+
+		if(dstp_len > 1)
+		{
+			status = sgx_sha256_msg(disease_type_uchar, dstp_len,
+				(sgx_sha256_hash_t*)dstp_hash);
+
+			if(status != SGX_SUCCESS)
+			{
+				throw std::string("Failed to obtain sha256 hash.");
+			}
+		}
+
+
+		status = OCALL_calc_inquiryVCTX_size(&ocall_ret, dummy_array, 32, 
+			natn_hash, 32, dstp_hash, 32, &est_sz);
+
+		if(status != SGX_SUCCESS)
+		{
+			OCALL_print_status(status);
+			throw std::string("Internal SGX error.");
+		}
+
+		if(ocall_ret != 0)
+		{
+			throw std::string("Error has occurred while querying MySQL.");
+		}
+
+
+		/* obtain filename list matching with conditions */
+
+		/*
+		 * To more strictly control output privacy, you should seal 
+		 * nations and disease_types, then unseal them when inquirying.
+		 */
+
+		char *matched_filenames = new char[est_sz + 1]();
+		
+		status = OCALL_inquiryVCFContext(&ocall_ret, dummy_array, 32,
+			natn_hash, 32, dstp_hash, 32, matched_filenames, est_sz);
+
+		if(status != SGX_SUCCESS)
+		{
+			OCALL_print_status(status);
+			throw std::string("Internal SGX error.");
+		}
+
+		if(ocall_ret != 0)
+		{
+			throw std::string("Error has occurred while querying MySQL.");
+		}
+
+
+		/* add obtained filenames to nation filename list */
+		char *flnm_token = strtok(matched_filenames, "\n");
+
+		do
+		{
+			natn_flnm_list[nidx].push_back(flnm_token);
+		}
+		while (flnm_token = strtok(NULL, "\n"));
+	}
+
+
+	/* process for every filenames */
+	char *token_div;
+	std::vector<std::string> filename_vec;
+
+	token_div = strtok((char*)filename_list, "\n");
+
+	do
+	{
+		filename_vec.push_back(token_div);
+	}
+	while ((token_div = strtok(NULL, "\n")) != NULL);
+
+
+	std::vector<std::string> matched_list;
+	std::vector<int> matched_nation_type;
+	size_t fv_sz = filename_vec.size();
+	
+
+	/* sort matched filename list */
+	for(int i = 0; i < fv_sz; i++)
+	{
+		for(int j = 0; j < nlist_size; j++)
+		{
+			if(nation_index[j] == -1) continue;
+
+			if(natn_flnm_list[j][nation_index[j]] == filename_vec[i])
+			{
+				matched_list.push_back(filename_vec[i]);
+				matched_nation_type.push_back(j);
+				nation_index[j]++;
+			}
+
+			if(nation_index[j] >= natn_flnm_list[j].size())
+			{
+				nation_index[j] = -1;
+			}
+		}
+	}
+
+	/*
+	for(int i = 0; i < filename_vec.size(); i++)
+	{
+		OCALL_print(filename_vec[i].c_str());
+	}
+
+	OCALL_print(" ");
+
+	for(int i = 0; i < matched_list.size(); i++)
+	{
+		OCALL_print(matched_list[i].c_str());
+	}
+
+	for(int i = 0; i < matched_nation_type.size(); i++)
+	{
+		OCALL_print_int(matched_nation_type[i]);
+	}
+
+
+	return 0.0;
+	*/
+
+
+	/* declare vector for contingency table */
+	std::vector<std::vector<std::vector<char>>> contig_table;
+	
+	for(int i = 0; i < query_size; i++)
+	{
+		contig_table.emplace_back();
+
+		for(int j = 0; j < nlist_size; j++)
+		{
+			contig_table[i].emplace_back();
+
+			for(int k = 0; k < 4; k++)
+			{
+				/*
+				 * [0]: total of "0/0"
+				 * [1]: total of "x/0" and "0/x", which x is minor allele
+				 * [2]: total of "x/x"
+				 * [3]: total of corrupted data i.e. including "." like "./0"
+				 */
+
+				 contig_table[i][j].push_back(0);
+			}
+		}
+	}
+
+	int match_index = 0;
+
+	
+	for(int idx = 0; idx < filename_vec.size(); idx++)
+	{
+		int match_flag = 0;
+
+		if(matched_list.size() > 0 && match_index < matched_list.size())
+		{
+			if(filename_vec[idx] == matched_list[match_index])
+			{
+				match_flag = 1;
+				match_index++;
+			}
+		}
+
+		if(filename_vec[idx].length() != 16)
+		{
+			OCALL_print("Illegal filename detected ->");
+			OCALL_print(filename_vec[idx].c_str());
+			break;
+		}
+
+		std::string disp_str = "\nProcessing ";
+		disp_str += filename_vec[idx];
+		disp_str += " ->";
+
+		OCALL_print(disp_str.c_str());
+
+		size_t sealed_key_size;
+		size_t divnum = 0;
+
+		sealed_key_size = sgx_calc_sealed_data_size(0, 16);
+
+		uint8_t *sealed_key = new uint8_t[sealed_key_size]();
+		char *flnm_to_pass = new char[17]();
+
+		for(int i = 0; i < 16; i++)
+		{
+			flnm_to_pass[i] = filename_vec[idx].c_str()[i];
+		}
+
+		status = OCALL_get_key_and_vctx(&ocall_ret, sealed_key, 
+			sealed_key_size, &divnum, flnm_to_pass);
+
+		if(status != SGX_SUCCESS)
+		{
+			OCALL_print_status(status);
+			throw std::string("Internal SGX error.");
+		}
+
+		if(ocall_ret == -1)
+		{
+			throw std::string("Error has occurred while querying MySQL.");
+		}
+		else if(ocall_ret == -2)
+		{
+			throw std::string("Encryption key not found for stored VCF.");
+		}
+
+
+		/* unseal key */
+		uint32_t key_len; // must be 16
+
+		key_len = sgx_get_encrypt_txt_len((sgx_sealed_data_t*)sealed_key);
+		uint8_t *vcf_key = new uint8_t[key_len]();
+
+		status = sgx_unseal_data((sgx_sealed_data_t*)sealed_key, NULL, 0,
+			vcf_key, &key_len);
+
+		if(status != SGX_SUCCESS)
+		{
+			OCALL_print_status(status);
+			
+			delete(vcf_key);
+			throw std::string("Internal SGX error.");
+		}
+
+
+		/* load IVs and tags */
+		uint8_t *iv_array = new uint8_t[12 * divnum]();
+		uint8_t *tag_array = new uint8_t[16 * divnum]();
+
+		status = OCALL_get_IV_and_tag_for_VCF(&ocall_ret, iv_array, 12 * divnum,
+			tag_array, 16 * divnum, flnm_to_pass);
+
+
+		if(status != SGX_SUCCESS)
+		{
+			delete(sealed_key);
+			delete(flnm_to_pass);
+			delete(vcf_key);
+
+			OCALL_print_status(status);
+			throw std::string("Internal SGX error.");
+		}
+
+
+		if(ocall_ret == -1)
+		{
+			delete(sealed_key);
+			delete(flnm_to_pass);
+			delete(vcf_key);
+			
+			throw std::string("Error has occurred while querying MySQL.");
+		}
+		else if(ocall_ret == -2)
+		{
+			delete(sealed_key);
+			delete(flnm_to_pass);
+			delete(vcf_key);
+
+			throw std::string("Failed to decode IV from base64.");
+		}
+		else if(ocall_ret == -3)
+		{
+			delete(sealed_key);
+			delete(flnm_to_pass);
+			delete(vcf_key);
+
+			throw std::string("Failed to decode tag from base64.");
+		}
+
+
+		/* position index must be initialized here */
+		int pos_index = 0;
+
+		
+		/* start loading encrypted VCF */
+		for(int index = 0; index < divnum; index++)
+		{
+			size_t div_flnm_len = filename_vec[idx].length();
+			uint64_t chunk_size = 0;
+
+			char *div_filename = new char[div_flnm_len + 1]();
+
+			for(int i = 0; i < div_flnm_len; i++)
+			{
+				div_filename[i] = filename_vec[idx][i];
+			}
+
+			status = OCALL_get_VCF_chunk_size(&chunk_size, 
+				div_filename, div_flnm_len + 1, index);
+			
+
+			if(status != SGX_SUCCESS)
+			{
+				delete(sealed_key);
+				delete(flnm_to_pass);
+				delete(vcf_key);
+				delete(div_filename);
+
+				OCALL_print_status(status);
+				throw std::string("Internal SGX error.");
+			}
+
+			if(chunk_size == -1)
+			{
+				delete(sealed_key);
+				delete(flnm_to_pass);
+				delete(vcf_key);
+				delete(div_filename);
+				
+				throw std::string("Failed to open encrypted VCF chunk.");
+			}
+
+			OCALL_print_int(chunk_size);
+			
+			uint8_t *vcf_chunk = new uint8_t[chunk_size]();
+
+			/* need to divide chunks because of FUCKING OCALL STACK SPEC */
+			int chunk_round = chunk_size / 5000000;
+			uint64_t div_chunk_size = 0;
+
+			if(chunk_size % 5000000 != 0)
+			{
+				chunk_round++;
+			}
+
+			for(int i = 0; i < chunk_round; i++)
+			{
+				if((chunk_size % 5000000) != 0 && i == chunk_round - 1)
+				{
+					div_chunk_size = chunk_size % 5000000;
+				}
+				else
+				{
+					div_chunk_size = 5000000;
+				}
+
+				status = OCALL_load_VCF_chunk(&ocall_ret, vcf_chunk + i * 5000000,
+					div_chunk_size, i * 5000000, div_filename, div_flnm_len + 1, index);
+				
+
+				if(status != SGX_SUCCESS)
+				{
+					delete(sealed_key);
+					delete(flnm_to_pass);
+					delete(vcf_key);
+					delete(div_filename);
+					delete(vcf_chunk);
+
+					OCALL_print_status(status);
+					throw std::string("Internal SGX error.");
+				}
+
+
+				if(ocall_ret != 0)
+				{
+					delete(sealed_key);
+					delete(flnm_to_pass);
+					delete(vcf_key);
+					delete(div_filename);
+					delete(vcf_chunk);
+					
+					if(ocall_ret == -1)
+					{
+						throw std::string("Failed to open encrypted VCF chunk.");
+					}
+					else
+					{
+						throw std::string("Failed to read encrypted VCF chunk.");
+					}
+				}
+			}
+
+			/* execute decryption */
+			uint8_t *plain_vcf = new uint8_t[chunk_size + 1]();
+			uint8_t *iv_t = new uint8_t[12]();
+			sgx_aes_gcm_128bit_tag_t tag_t;
+
+			for(int i = 0; i < 12; i++)
+			{
+				iv_t[i] = iv_array[i + index * 12];
+			}
+
+			for(int i = 0; i < 16; i++)
+			{
+				tag_t[i] = tag_array[i + index * 16];
+			}
+
+			status = sgx_rijndael128GCM_decrypt((sgx_ec_key_128bit_t*)vcf_key, vcf_chunk, 
+				chunk_size, plain_vcf, iv_t, 12, NULL, 0, &tag_t);
+
+			if(status != SGX_SUCCESS)
+			{
+				OCALL_print_status(status);
+				throw std::string("Failed to decrypt stored VCF.");
+			}
+
+
+			/* execute FET */
+			final_ret = FisherExactTest(plain_vcf, &fet, chrom, 
+				pos_query, nation, disease_type, match_flag);
+
+			/* increment position index */
+			pos_index++;
+
+			delete(vcf_chunk);
+			delete(div_filename);
+			delete(iv_t);
+			delete(plain_vcf);
+		}	
+
+
+		delete(sealed_key);
+		delete(flnm_to_pass);
+		delete(vcf_key);
+		delete(iv_array);
+		delete(tag_array);
+
+	} //while((token_div = strtok(NULL, "\n")) != NULL);
+
+	/* finalize result */
+	
+	
 	//Bmain::result_str = "";
 
 	return 0.0;

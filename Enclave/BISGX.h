@@ -6,7 +6,8 @@
 #define SHORT_SIZ sizeof(short int)
 #define SHORT_P(p) (short int *)(p)
 #define UCHAR_P(p) (uint8_t *)(p)
-#define LIN_SIZ 255
+//#define LIN_SIZ 255
+#define LIN_SIZ 2097152
 
 class BISGX_stack
 {
@@ -57,7 +58,7 @@ public:
 	}
 	void set(int adrs, double dt) { mem[adrs] = dt; }
 	void add(int adrs, double dt) { mem[adrs] += dt; }
-	double get(int adrs) {return mem[adrs]; }
+	double get(int adrs) { return mem[adrs]; }
 	int size() { return (int)mem.size(); }
 	void resize(unsigned int n) { mem.resize(n); }
 	void destruct()
@@ -76,7 +77,7 @@ enum TknKind
 	Func = 150,		Var,	If,		Elif,	Else,	For,	To,
 	Step,	While,	End,	Break,	Return,	Option,	Print,	Println,
 	Average,Edist,	Galign,	Pow,	InquiryDB,	InquiryVCF,
-	AlleleF,	
+	AlleleF,Fisher,
 	Sin,	Cos,	Tan,	Log,	Log10,	Exp,	Sqrt,	Cbrt,
 	Ceil,	Absl,	Floor,	Round,	Rand,	SearchA,	DEO,
 	Input,	Toint,	Exit,	Equal,	NotEq,	

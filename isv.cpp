@@ -1019,9 +1019,6 @@ int OCALL_calc_inquiryVCTX_size(uint8_t *chrom, size_t chrm_len, uint8_t *nation
 
 	*sz = ret_str.length();
 
-	cout << "\nINFO: sz: " << endl;
-	cout << *sz << endl << endl;
-
 	return 0;
 }
 
