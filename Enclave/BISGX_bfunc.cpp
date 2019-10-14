@@ -75,8 +75,10 @@ namespace Bbfunc
 		std::string &query);
 	double VCFChunkLoader_FET(std::string chrom, std::string nation, 
 		std::string disease_type, std::string &query);
-	double VCFChunkLoader_FullSize(std::string chrom, std::string nation, 
-		std::string disease_type, std::string &query, int mode);
+	double VCFChunkLoader_LR(std::string chrom, std::string nation, 
+		std::string disease_type, std::string &query);
+	double VCFChunkLoader_PCA(std::string chrom, std::string nation, 
+		std::string disease_type, std::string &query);
 }
 
 namespace Bmain
@@ -2489,10 +2491,9 @@ double Bbfunc::VCFChunkLoader_FET(std::string chrom, std::string nation,
 }
 
 
-double VCFParser_FullSize(uint8_t *plain_vcf, 
-	std::vector<std::vector<std::vector<char>>> &snp_vec,
-	std::string chrom, std::vector<uint64_t> &pos_query, int &query_index,
-	int nation_kind, int matched_flag)
+double VCFParser_LR(uint8_t *plain_vcf, std::vector<std::vector<char>> &snp_vec,
+	std::vector<char> &nation_flags, std::string chrom, std::vector<uint64_t> &pos_query, 
+	int &query_index, int matched_flag, int &nf_updated)
 {
 	/*
 	 * 1. convert query to array of uint64_t
@@ -2500,13 +2501,13 @@ double VCFParser_FullSize(uint8_t *plain_vcf,
 	 * 3. compare with actual position and skip query if need
 	*/
 
+	int is_valid_pos = 0;
 	char *tail_line_tk;
 	char *line_token = strtok_r((char*)plain_vcf, "\n", &tail_line_tk);
 
 
 	do
 	{
-		if(matched_flag == 0) continue;
 		if(line_token[0] == '#') continue;
 
 
@@ -2543,7 +2544,7 @@ double VCFParser_FullSize(uint8_t *plain_vcf,
 		{
 			continue;
 		}
-		
+	
 
 
 		/* discard refID, SNP info, QUAL, FILTER, INFO, FORMAT */
@@ -2596,48 +2597,689 @@ double VCFParser_FullSize(uint8_t *plain_vcf,
 			}
 
 
-			/* 
-			 * categorize obtained allele: 
-			 *  - [][][0] -> 0|0
-			 *  - [][][1] -> x|0 or 0|x; where x > 0
-			 *  - [][][2] -> x|x or y|x or x|y; where y > 0 && x > 0
-			 *  - [][][3] -> .|n or n|. or .|.
-			 */
-
 
 			if(allele1 == "0" && allele2 == "0")
 			{
-				snp_vec[query_index][nation_kind].emplace_back(0);
+				snp_vec[query_index + 1].emplace_back(0);
 			}
 			else if((allele1 == "0" || allele2 == "0") 
 					&& (allele1 != "." && allele2 != "."))
 			{
-				snp_vec[query_index][nation_kind].emplace_back(1);
+				snp_vec[query_index + 1].emplace_back(1);
 			}
 			else if((allele1 != "0" && allele2 != "0")
 					&& (allele1 != "." && allele2 != "."))
 			{
-				snp_vec[query_index][nation_kind].emplace_back(2);
+				snp_vec[query_index + 1].emplace_back(2);
 			}
 			else
 			{
-				snp_vec[query_index][nation_kind].emplace_back(3);
+				/* 
+				 * if obtained allele data is invalid, distinguishing it is
+				 * STRONGLY RECOMMENDED, but temporary just put 0 fot the present.
+				 */
+
+				snp_vec[query_index + 1].emplace_back(0);
+			}
+
+			if(nf_updated == 0)
+			{
+				if(matched_flag == 1)
+				{
+					nation_flags.emplace_back(1);
+				}
+				else
+				{
+					nation_flags.emplace_back(0);
+				}
 			}
 		}
-
 		query_index++;
+		nf_updated = 1;
 
 	}
 	while ((line_token = strtok_r(NULL, "\n", &tail_line_tk)) != NULL);
 
+	return 0.0;
+}
+
+
+void LogisticRegression(double *theta, std::vector<std::vector<char>> &x, 
+	size_t LR_len, std::vector<char> &y, int M, int N, int iteration, int regularization)
+{
+	std::vector<double> LR_function(M, 0.0);
+	double diff_negLLF = 0.0;
+  
+
+	int lambda = 1;
+	double rate = 0.01;
+  
+
+	for(int i=0; i<N+1; i++)
+		theta[i] = 0.1;
+
+  
+	for(int itr=0; itr<iteration; itr++)
+	{
+		for(int i=0; i<N+1; i++)
+		{
+			for(int j=0; j<M; j++)
+			{
+				if(i == 0) LR_function[j] = 0.0;
+	
+				LR_function[j] -= theta[i] * x[i][j];
+	
+				if(i == N)
+				{
+					LR_function[j] = y[j] - 1 / (1 + exp(LR_function[j]));
+      			}
+			}
+		}
+
+
+		for(int i=0; i<N+1; i++)
+		{
+			for(int j=0; j<M; j++)
+			{
+				if(j == 0) diff_negLLF = 0.0;
+	
+				diff_negLLF -= LR_function[j] * theta[i] * x[i][j];
+
+
+				if(j == M-1)
+				{
+					if(regularization == 1)
+					{
+						diff_negLLF = (lambda * theta[i] + diff_negLLF) / M;
+					}
+	
+					theta[i] -= rate * diff_negLLF;
+				}
+			}
+		}
+	}
+}
+
+
+
+double Bbfunc::VCFChunkLoader_LR(std::string chrom, std::string nation, 
+	std::string disease_type, std::string &query)
+{
+	sgx_status_t status = SGX_SUCCESS;
+	uint8_t *dummy_array = new uint8_t[32]();
+	int ocall_ret = 0;
+	size_t est_sz;
+	double final_ret;
+
+	
+	/* For Fisher's Exact Test */
+	FisherTest_t fet;
+
+
+	/* parse query to vector */
+	std::vector<uint64_t> pos_query;
+
+	char *pos_token;
+	char *tail_pos_tk;
+	
+	if(query == "")
+	{
+		Bmain::result_str = "No matched result.";
+		return -1.0;
+	}
+
+	pos_token = strtok_r((char*)query.c_str(), ";", &tail_pos_tk);
+
+	do
+	{
+		pos_query.push_back(strtoul(pos_token, NULL, 10));
+	}
+	while((pos_token = strtok_r(NULL, ";", &tail_pos_tk)) != NULL);
+
+
+
+	/* sort query array */
+	int query_size = pos_query.size();
+
+	uint64_t *sort_temp = new uint64_t[query_size]();
+
+	for(int i = 0; i < query_size; i++)
+	{
+		sort_temp[i] = pos_query[i];
+	}
+
+	qsort(sort_temp, query_size, sizeof(uint64_t), qsort_compare);
+
+	for(int i = 0; i < query_size; i++)
+	{
+		pos_query[i] = sort_temp[i];
+	}
+
+	delete(sort_temp);
+
+
+
+	/* calculate entire size of filenames */
+	status = OCALL_calc_inquiryVCTX_size(&ocall_ret, dummy_array, 32, 
+		dummy_array, 32, dummy_array, 32, &est_sz);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print_status(status);
+		throw std::string("Internal SGX error.");
+	}
+
+	if(ocall_ret != 0)
+	{
+		throw std::string("Error has occurred while querying MySQL.");
+	}
+
+
+	/* obtain filename list */
+	char *filename_list = new char[est_sz + 1]();
+	
+	status = OCALL_inquiryVCFContext(&ocall_ret, dummy_array, 32,
+		dummy_array, 32, dummy_array, 32, filename_list, est_sz);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print_status(status);
+		throw std::string("Internal SGX error.");
+	}
+
+	if(ocall_ret != 0)
+	{
+		throw std::string("Error has occurred while querying MySQL.");
+	}
+
+
+	
+
+	/* calculate entire size of filenames matching with conditions */
+	size_t natn_len, dstp_len;
+
+	natn_len = nation.length();
+	dstp_len = disease_type.length();
+
+
+	uint8_t *nation_uchar = new uint8_t[natn_len + 1]();
+	uint8_t *disease_type_uchar = new uint8_t[dstp_len + 1]();
+
+
+	for(int i = 0; i < natn_len; i++)
+	{
+		nation_uchar[i] = (uint8_t)nation.c_str()[i];
+	}
+
+	for(int i = 0; i < dstp_len; i++)
+	{
+		disease_type_uchar[i] = (uint8_t)disease_type.c_str()[i];
+	}
+
+	uint8_t *natn_hash = new uint8_t[32]();
+	uint8_t *dstp_hash = new uint8_t[32]();
+
+
+	if(natn_len > 1)
+	{
+		status = sgx_sha256_msg(nation_uchar, natn_len,
+			(sgx_sha256_hash_t*)natn_hash);
+
+		if(status != SGX_SUCCESS)
+		{
+			throw std::string("Failed to obtain sha256 hash.");
+		}
+	}
+
+
+	if(dstp_len > 1)
+	{
+		status = sgx_sha256_msg(disease_type_uchar, dstp_len,
+			(sgx_sha256_hash_t*)dstp_hash);
+
+		if(status != SGX_SUCCESS)
+		{
+			throw std::string("Failed to obtain sha256 hash.");
+		}
+	}
+
+
+	status = OCALL_calc_inquiryVCTX_size(&ocall_ret, dummy_array, 32, 
+		natn_hash, 32, dstp_hash, 32, &est_sz);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print_status(status);
+		throw std::string("Internal SGX error.");
+	}
+
+	if(ocall_ret != 0)
+	{
+		throw std::string("Error has occurred while querying MySQL.");
+	}
+
+
+	/* obtain filename list matching with conditions */
+
+	/*
+	 * To more strictly control output privacy, you should seal 
+	 * nations and disease_types, then unseal them when inquirying.
+	 */
+
+	char *matched_filenames = new char[est_sz + 1]();
+	
+	status = OCALL_inquiryVCFContext(&ocall_ret, dummy_array, 32,
+		natn_hash, 32, dstp_hash, 32, matched_filenames, est_sz);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print_status(status);
+		throw std::string("Internal SGX error.");
+	}
+
+	if(ocall_ret != 0)
+	{
+		throw std::string("Error has occurred while querying MySQL.");
+	}
+
+
+	/* generate matched filename vector */
+	std::vector<std::string> matched_list;
+	
+	char *matched_token = strtok(matched_filenames, "\n");
+
+	do
+	{
+		matched_list.push_back(matched_token);
+	}
+	while ((matched_token = strtok(NULL, "\n")) != NULL);
+
+
+	for(int i = 0; i < matched_list.size(); i++)
+	{
+		OCALL_print(matched_list[i].c_str());
+	}
+
+	delete(matched_filenames);
+
+
+
+
+	/* process for every filenames */
+	char *token_div;
+	std::vector<std::string> filename_vec;
+
+	token_div = strtok((char*)filename_list, "\n");
+
+	do
+	{
+		filename_vec.push_back(token_div);
+	}
+	while ((token_div = strtok(NULL, "\n")) != NULL);
+
+
+
+
+	/* declare vector for contingency table */
+	std::vector<std::vector<char>> snp_vec;
+	std::vector<char> nation_flags;
+
+	/*
+	 * ------------------ vector design for LR --------------------
+	 * snp_vec[position][registered_user];
+	 * 
+	 * first line (i.e. snp_vec[0][i]) must be flushed with 1,
+	 * therefore loaded data will be stored in snp_vec[>1][i].
+	 * ------------------------------------------------------------
+	 */
+
+	/* 
+	 * for 1-flushed line. this line will be processed 
+	 * after loading entire VCF.
+	 */
+
+	snp_vec.emplace_back();
+	
+
+	for(int i = 0; i < query_size; i++)
+	{
+		snp_vec.emplace_back();
+	}
+
+
+	int match_index = 0;
+
+	
+	for(int idx = 0; idx < filename_vec.size(); idx++)
+	{
+		int match_flag = 0;
+
+		if(matched_list.size() > 0 && match_index < matched_list.size())
+		{
+			if(filename_vec[idx] == matched_list[match_index])
+			{
+				match_flag = 1;
+				match_index++;
+			}
+		}
+
+
+		if(filename_vec[idx].length() != 16)
+		{
+			OCALL_print("Illegal filename detected ->");
+			OCALL_print(filename_vec[idx].c_str());
+			break;
+		}
+
+		std::string disp_str = "\nProcessing ";
+		disp_str += filename_vec[idx];
+		disp_str += " ->";
+
+		OCALL_print(disp_str.c_str());
+
+		size_t sealed_key_size;
+		size_t divnum = 0;
+
+		sealed_key_size = sgx_calc_sealed_data_size(0, 16);
+
+		uint8_t *sealed_key = new uint8_t[sealed_key_size]();
+		char *flnm_to_pass = new char[17]();
+
+		for(int i = 0; i < 16; i++)
+		{
+			flnm_to_pass[i] = filename_vec[idx].c_str()[i];
+		}
+
+		status = OCALL_get_key_and_vctx(&ocall_ret, sealed_key, 
+			sealed_key_size, &divnum, flnm_to_pass);
+
+		if(status != SGX_SUCCESS)
+		{
+			OCALL_print_status(status);
+			throw std::string("Internal SGX error.");
+		}
+
+		if(ocall_ret == -1)
+		{
+			throw std::string("Error has occurred while querying MySQL.");
+		}
+		else if(ocall_ret == -2)
+		{
+			throw std::string("Encryption key not found for stored VCF.");
+		}
+
+
+		/* unseal key */
+		uint32_t key_len; // must be 16
+
+		key_len = sgx_get_encrypt_txt_len((sgx_sealed_data_t*)sealed_key);
+		uint8_t *vcf_key = new uint8_t[key_len]();
+
+		status = sgx_unseal_data((sgx_sealed_data_t*)sealed_key, NULL, 0,
+			vcf_key, &key_len);
+
+		if(status != SGX_SUCCESS)
+		{
+			OCALL_print_status(status);
+			
+			delete(vcf_key);
+			throw std::string("Internal SGX error.");
+		}
+
+
+		/* load IVs and tags */
+		uint8_t *iv_array = new uint8_t[12 * divnum]();
+		uint8_t *tag_array = new uint8_t[16 * divnum]();
+
+		status = OCALL_get_IV_and_tag_for_VCF(&ocall_ret, iv_array, 12 * divnum,
+			tag_array, 16 * divnum, flnm_to_pass);
+
+
+		if(status != SGX_SUCCESS)
+		{
+			delete(sealed_key);
+			delete(flnm_to_pass);
+			delete(vcf_key);
+
+			OCALL_print_status(status);
+			throw std::string("Internal SGX error.");
+		}
+
+
+		if(ocall_ret == -1)
+		{
+			delete(sealed_key);
+			delete(flnm_to_pass);
+			delete(vcf_key);
+			
+			throw std::string("Error has occurred while querying MySQL.");
+		}
+		else if(ocall_ret == -2)
+		{
+			delete(sealed_key);
+			delete(flnm_to_pass);
+			delete(vcf_key);
+
+			throw std::string("Failed to decode IV from base64.");
+		}
+		else if(ocall_ret == -3)
+		{
+			delete(sealed_key);
+			delete(flnm_to_pass);
+			delete(vcf_key);
+
+			throw std::string("Failed to decode tag from base64.");
+		}
+
+
+		/* position index must be initialized here */
+		int pos_index = 0;
+		int nf_updated = 0;
+
+		
+		/* start loading encrypted VCF */
+		for(int index = 0; index < divnum; index++)
+		{
+			size_t div_flnm_len = filename_vec[idx].length();
+			uint64_t chunk_size = 0;
+
+			char *div_filename = new char[div_flnm_len + 1]();
+
+			for(int i = 0; i < div_flnm_len; i++)
+			{
+				div_filename[i] = filename_vec[idx][i];
+			}
+
+			status = OCALL_get_VCF_chunk_size(&chunk_size, 
+				div_filename, div_flnm_len + 1, index);
+			
+
+			if(status != SGX_SUCCESS)
+			{
+				delete(sealed_key);
+				delete(flnm_to_pass);
+				delete(vcf_key);
+				delete(div_filename);
+
+				OCALL_print_status(status);
+				throw std::string("Internal SGX error.");
+			}
+
+			if(chunk_size == -1)
+			{
+				delete(sealed_key);
+				delete(flnm_to_pass);
+				delete(vcf_key);
+				delete(div_filename);
+				
+				throw std::string("Failed to open encrypted VCF chunk.");
+			}
+
+			OCALL_print_int(chunk_size);
+			
+			uint8_t *vcf_chunk = new uint8_t[chunk_size]();
+
+			/* need to divide chunks because of FUCKING OCALL STACK SPEC */
+			int chunk_round = chunk_size / 5000000;
+			uint64_t div_chunk_size = 0;
+
+			if(chunk_size % 5000000 != 0)
+			{
+				chunk_round++;
+			}
+
+			for(int i = 0; i < chunk_round; i++)
+			{
+				if((chunk_size % 5000000) != 0 && i == chunk_round - 1)
+				{
+					div_chunk_size = chunk_size % 5000000;
+				}
+				else
+				{
+					div_chunk_size = 5000000;
+				}
+
+				status = OCALL_load_VCF_chunk(&ocall_ret, vcf_chunk + i * 5000000,
+					div_chunk_size, i * 5000000, div_filename, div_flnm_len + 1, index);
+				
+
+				if(status != SGX_SUCCESS)
+				{
+					delete(sealed_key);
+					delete(flnm_to_pass);
+					delete(vcf_key);
+					delete(div_filename);
+					delete(vcf_chunk);
+
+					OCALL_print_status(status);
+					throw std::string("Internal SGX error.");
+				}
+
+
+				if(ocall_ret != 0)
+				{
+					delete(sealed_key);
+					delete(flnm_to_pass);
+					delete(vcf_key);
+					delete(div_filename);
+					delete(vcf_chunk);
+					
+					if(ocall_ret == -1)
+					{
+						throw std::string("Failed to open encrypted VCF chunk.");
+					}
+					else
+					{
+						throw std::string("Failed to read encrypted VCF chunk.");
+					}
+				}
+			}
+
+			/* execute decryption */
+			uint8_t *plain_vcf = new uint8_t[chunk_size + 1]();
+			uint8_t *iv_t = new uint8_t[12]();
+			sgx_aes_gcm_128bit_tag_t tag_t;
+
+			for(int i = 0; i < 12; i++)
+			{
+				iv_t[i] = iv_array[i + index * 12];
+			}
+
+			for(int i = 0; i < 16; i++)
+			{
+				tag_t[i] = tag_array[i + index * 16];
+			}
+
+			status = sgx_rijndael128GCM_decrypt((sgx_ec_key_128bit_t*)vcf_key, vcf_chunk, 
+				chunk_size, plain_vcf, iv_t, 12, NULL, 0, &tag_t);
+
+			if(status != SGX_SUCCESS)
+			{
+				OCALL_print_status(status);
+				throw std::string("Failed to decrypt stored VCF.");
+			}
+
+
+			/* execute VCF parsing
+			 * 
+			 * to obtain counter-example nation data, all hash values of each nations
+			 * must be calculated and pick up single VCF for each nations.
+			 * if you USE SEALING, this implementation must be far more complicated.
+			 */
+			final_ret = VCFParser_LR(plain_vcf, snp_vec, nation_flags, chrom,
+				pos_query, pos_index, match_flag, nf_updated);
+
+			/* increment position index */
+			//pos_index++;
+
+			delete(vcf_chunk);
+			delete(div_filename);
+			delete(iv_t);
+			delete(plain_vcf);
+		}
+
+		
+		/*
+		for(int i = 0; i < 4; i++)
+			OCALL_print_int((int)contig_table[0][0][i]);
+		*/
+
+
+		delete(sealed_key);
+		delete(flnm_to_pass);
+		delete(vcf_key);
+		delete(iv_array);
+		delete(tag_array);
+
+	}
+
+
+	for(int i = 1; i < snp_vec.size(); i++)
+	{
+		if(snp_vec[i].size() == 0)
+		{
+			snp_vec[i].pop_back();
+		}
+	}
+
+	for(int i = 0; i < snp_vec[1].size(); i++)
+	{
+		snp_vec[0].emplace_back(1);
+	}
+
+	/*
+	std::string message;
+	
+	for(int i = 0; i < snp_vec[0].size(); i++)
+	{
+		message += std::to_string((int)snp_vec[2][i]);
+	}
+
+	OCALL_print(message.c_str());
+	*/
+
+	double *theta = new double[snp_vec.size()]();
+
+	LogisticRegression(theta, snp_vec, snp_vec.size(), nation_flags, 
+		snp_vec[0].size(), snp_vec.size() - 1, 100, 0);
+
+	std::string message;
+
+	for(int i = 0; i < snp_vec.size(); i++)
+	{
+		message += std::to_string(theta[i]);
+		message += ",";
+	}
+
+	OCALL_print(message.c_str());
 
 	return 0.0;
 }
 
 
 
-double Bbfunc::VCFChunkLoader_FullSize(std::string chrom, std::string nation, 
-	std::string disease_type, std::string &query, int mode)
+double Bbfunc::VCFChunkLoader_PCA(std::string chrom, std::string nation, 
+	std::string disease_type, std::string &query)
 {
 	sgx_status_t status = SGX_SUCCESS;
 	uint8_t *dummy_array = new uint8_t[32]();
@@ -2746,119 +3388,114 @@ double Bbfunc::VCFChunkLoader_FullSize(std::string chrom, std::string nation,
 	}
 
 
-	
-
 	/* calculate entire size of filenames matching with conditions */
-	/* loop for every nations designated in script code */
-	std::vector<std::vector<std::string>> natn_flnm_list;
-	std::vector<int> nation_index;
-	size_t nlist_size = nation_list.size();
+	size_t natn_len, dstp_len;
 
-	for(int i = 0; i < nlist_size; i++)
+	natn_len = nation.length();
+	dstp_len = disease_type.length();
+
+
+	uint8_t *nation_uchar = new uint8_t[natn_len + 1]();
+	uint8_t *disease_type_uchar = new uint8_t[dstp_len + 1]();
+
+
+	for(int i = 0; i < natn_len; i++)
 	{
-		natn_flnm_list.emplace_back();
-		nation_index.push_back(0);
+		nation_uchar[i] = (uint8_t)nation.c_str()[i];
 	}
 
-	/* query filenames for every nations */
-	for(int nidx = 0; nidx < nlist_size; nidx++)
+	for(int i = 0; i < dstp_len; i++)
 	{
-		size_t natn_len, dstp_len;
+		disease_type_uchar[i] = (uint8_t)disease_type.c_str()[i];
+	}
 
-		natn_len = nation_list[nidx].length();
-		dstp_len = disease_type.length();
-
-
-		uint8_t *nation_uchar = new uint8_t[natn_len + 1]();
-		uint8_t *disease_type_uchar = new uint8_t[dstp_len + 1]();
+	uint8_t *natn_hash = new uint8_t[32]();
+	uint8_t *dstp_hash = new uint8_t[32]();
 
 
-		for(int i = 0; i < natn_len; i++)
-		{
-			nation_uchar[i] = (uint8_t)nation_list[nidx].c_str()[i];
-		}
-
-		for(int i = 0; i < dstp_len; i++)
-		{
-			disease_type_uchar[i] = (uint8_t)disease_type.c_str()[i];
-		}
-
-		uint8_t *natn_hash = new uint8_t[32]();
-		uint8_t *dstp_hash = new uint8_t[32]();
-
-
-		if(natn_len > 1)
-		{
-			status = sgx_sha256_msg(nation_uchar, natn_len,
-				(sgx_sha256_hash_t*)natn_hash);
-
-			if(status != SGX_SUCCESS)
-			{
-				throw std::string("Failed to obtain sha256 hash.");
-			}
-		}
-
-
-		if(dstp_len > 1)
-		{
-			status = sgx_sha256_msg(disease_type_uchar, dstp_len,
-				(sgx_sha256_hash_t*)dstp_hash);
-
-			if(status != SGX_SUCCESS)
-			{
-				throw std::string("Failed to obtain sha256 hash.");
-			}
-		}
-
-
-		status = OCALL_calc_inquiryVCTX_size(&ocall_ret, dummy_array, 32, 
-			natn_hash, 32, dstp_hash, 32, &est_sz);
+	if(natn_len > 1)
+	{
+		status = sgx_sha256_msg(nation_uchar, natn_len,
+			(sgx_sha256_hash_t*)natn_hash);
 
 		if(status != SGX_SUCCESS)
 		{
-			OCALL_print_status(status);
-			throw std::string("Internal SGX error.");
+			throw std::string("Failed to obtain sha256 hash.");
 		}
-
-		if(ocall_ret != 0)
-		{
-			throw std::string("Error has occurred while querying MySQL.");
-		}
+	}
 
 
-		/* obtain filename list matching with conditions */
-
-		/*
-		 * To more strictly control output privacy, you should seal 
-		 * nations and disease_types, then unseal them when inquirying.
-		 */
-
-		char *matched_filenames = new char[est_sz + 1]();
-		
-		status = OCALL_inquiryVCFContext(&ocall_ret, dummy_array, 32,
-			natn_hash, 32, dstp_hash, 32, matched_filenames, est_sz);
+	if(dstp_len > 1)
+	{
+		status = sgx_sha256_msg(disease_type_uchar, dstp_len,
+			(sgx_sha256_hash_t*)dstp_hash);
 
 		if(status != SGX_SUCCESS)
 		{
-			OCALL_print_status(status);
-			throw std::string("Internal SGX error.");
+			throw std::string("Failed to obtain sha256 hash.");
 		}
-
-		if(ocall_ret != 0)
-		{
-			throw std::string("Error has occurred while querying MySQL.");
-		}
-
-
-		/* add obtained filenames to nation filename list */
-		char *flnm_token = strtok(matched_filenames, "\n");
-
-		do
-		{
-			natn_flnm_list[nidx].push_back(flnm_token);
-		}
-		while (flnm_token = strtok(NULL, "\n"));
 	}
+
+
+	status = OCALL_calc_inquiryVCTX_size(&ocall_ret, dummy_array, 32, 
+		natn_hash, 32, dstp_hash, 32, &est_sz);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print_status(status);
+		throw std::string("Internal SGX error.");
+	}
+
+	if(ocall_ret != 0)
+	{
+		throw std::string("Error has occurred while querying MySQL.");
+	}
+
+
+	/* obtain filename list matching with conditions */
+
+	/*
+	 * To more strictly control output privacy, you should seal 
+	 * nations and disease_types, then unseal them when inquirying.
+	 */
+
+	char *matched_filenames = new char[est_sz + 1]();
+	
+	status = OCALL_inquiryVCFContext(&ocall_ret, dummy_array, 32,
+		natn_hash, 32, dstp_hash, 32, matched_filenames, est_sz);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print_status(status);
+		throw std::string("Internal SGX error.");
+	}
+
+	if(ocall_ret != 0)
+	{
+		throw std::string("Error has occurred while querying MySQL.");
+	}
+
+
+	/* generate matched filename vector */
+	std::vector<std::string> matched_list;
+	
+	char *matched_token = strtok(matched_filenames, "\n");
+
+	do
+	{
+		matched_list.push_back(matched_token);
+	}
+	while ((matched_token = strtok(NULL, "\n")) != NULL);
+
+
+	for(int i = 0; i < matched_list.size(); i++)
+	{
+		OCALL_print(matched_list[i].c_str());
+	}
+
+	delete(matched_filenames);
+
+
 
 
 	/* process for every filenames */
@@ -2874,74 +3511,33 @@ double Bbfunc::VCFChunkLoader_FullSize(std::string chrom, std::string nation,
 	while ((token_div = strtok(NULL, "\n")) != NULL);
 
 
-	std::vector<std::string> matched_list;
-	std::vector<int> matched_nation_type;
-	size_t fv_sz = filename_vec.size();
-	
-
-	/* sort matched filename list */
-	for(int i = 0; i < fv_sz; i++)
-	{
-		for(int j = 0; j < nlist_size; j++)
-		{
-			if(nation_index[j] == -1) continue;
-
-			if(natn_flnm_list[j][nation_index[j]] == filename_vec[i])
-			{
-				matched_list.push_back(filename_vec[i]);
-				matched_nation_type.push_back(j);
-				nation_index[j]++;
-			}
-
-			if(nation_index[j] >= natn_flnm_list[j].size())
-			{
-				nation_index[j] = -1;
-			}
-		}
-	}
-
-	/*
-	for(int i = 0; i < filename_vec.size(); i++)
-	{
-		OCALL_print(filename_vec[i].c_str());
-	}
-
-	OCALL_print(" ");
-
-	for(int i = 0; i < matched_list.size(); i++)
-	{
-		OCALL_print(matched_list[i].c_str());
-	}
-
-	for(int i = 0; i < matched_nation_type.size(); i++)
-	{
-		OCALL_print_int(matched_nation_type[i]);
-	}
-
-
-	return 0.0;
-	*/
 
 
 	/* declare vector for contingency table */
-	std::vector<std::vector<std::vector<char>>> snp_vec;
-	std::vector<double> p_value_vec;
+	std::vector<std::vector<char>> snp_vec;
+
+	/*
+	 * ------------------ vector design for LR --------------------
+	 * snp_vec[position][registered_user];
+	 * 
+	 * first line (i.e. snp_vec[0][i]) must be flushed with 1,
+	 * therefore loaded data will be stored in snp_vec[>1][i].
+	 * ------------------------------------------------------------
+	 */
+
+	/* 
+	 * for 1-flushed line. this line will be processed 
+	 * after loading entire VCF.
+	 */
+
+	snp_vec.emplace_back();
 	
 
 	for(int i = 0; i < query_size; i++)
 	{
 		snp_vec.emplace_back();
-
-		for(int j = 0; j < nlist_size; j++)
-		{
-			snp_vec[i].emplace_back();
-		}
 	}
 
-	for(int i = 0; i < 2; i++)
-	{
-		p_value_vec.push_back(0.0);
-	}
 
 	int match_index = 0;
 
@@ -3194,19 +3790,16 @@ double Bbfunc::VCFChunkLoader_FullSize(std::string chrom, std::string nation,
 				throw std::string("Failed to decrypt stored VCF.");
 			}
 
-			/*
-			for(int i = 0; i < matched_nation_type.size(); i++)
-			{
-				OCALL_print_int(matched_nation_type[i]);
-			}
-			OCALL_print_int(matched_nation_type.size());
-			OCALL_print_int(match_index);
-			*/
 
-			/* execute VCF parsing */
-			final_ret = VCFParser_FullSize(plain_vcf, snp_vec, chrom,
-				pos_query, pos_index, matched_nation_type[match_index - 1], 
-				match_flag);
+			/* execute VCF parsing
+			 * 
+			 * to obtain counter-example nation data, all hash values of each nations
+			 * must be calculated and pick up single VCF for each nations.
+			 * if you USE SEALING, this implementation must be far more complicated.
+			 */
+			
+			//final_ret = VCFParser_LR(plain_vcf, snp_vec, chrom,
+			//	pos_query, pos_index, match_flag);
 
 			/* increment position index */
 			//pos_index++;
@@ -3231,27 +3824,6 @@ double Bbfunc::VCFChunkLoader_FullSize(std::string chrom, std::string nation,
 		delete(tag_array);
 
 	}
-
-	/* check contingency table */
-	/*
-	for(int i = 0; i < query_size; i++)
-	{
-		for(int j = 0; j < nlist_size; j++)
-		{
-			for(int k = 0; k < 4; k++)
-			{
-				Bmain::result_str += std::to_string(contig_table[i][j][k]);
-				Bmain::result_str += ",";
-			}
-
-			Bmain::result_str.pop_back();
-			Bmain::result_str += " | ";
-		}
-
-		Bmain::result_str.pop_back();
-		Bmain::result_str += "\n";
-	}
-	*/	
 
 	return 0.0;
 }

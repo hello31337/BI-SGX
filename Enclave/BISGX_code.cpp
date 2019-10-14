@@ -87,9 +87,10 @@ namespace Bbfunc
 		std::string &query);
 	extern double VCFChunkLoader_FET(std::string chrom, std::string nation, 
 		std::string disease_type, std::string &query);
-	extern double VCFChunkLoader_FullSize(std::string chrom, 
-		std::string nation, std::string disease_type, std::string &query,
-		int mode);
+	extern double VCFChunkLoader_LR(std::string chrom, 
+		std::string nation, std::string disease_type, std::string &query);
+	extern double VCFChunkLoader_PCA(std::string chrom,
+		std::string nation, std::string disease_type, std::string &query);
 
 }
 
@@ -1256,8 +1257,8 @@ void Bcode::sysFncExec(TknKind kd)
 
 			code = nextCode(); //Skip RParen
 
-			double temp = Bbfunc::VCFChunkLoader_FullSize(chrom, nation,
-				disease_type, query, 0);
+			double temp = Bbfunc::VCFChunkLoader_LR(chrom, nation,
+				disease_type, query);
 
 			stk.push(temp);
 
@@ -1290,8 +1291,8 @@ void Bcode::sysFncExec(TknKind kd)
 
 			code = nextCode(); //Skip RParen
 
-			double temp = Bbfunc::VCFChunkLoader_FullSize(chrom, nation,
-				disease_type, query, 1);
+			double temp = Bbfunc::VCFChunkLoader_PCA(chrom, nation,
+				disease_type, query);
 
 			stk.push(temp);
 
