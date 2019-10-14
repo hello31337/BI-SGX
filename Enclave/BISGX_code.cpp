@@ -87,6 +87,10 @@ namespace Bbfunc
 		std::string &query);
 	extern double VCFChunkLoader_FET(std::string chrom, std::string nation, 
 		std::string disease_type, std::string &query);
+	extern double VCFChunkLoader_FullSize(std::string chrom, 
+		std::string nation, std::string disease_type, std::string &query,
+		int mode);
+
 }
 
 namespace Bmath
@@ -564,7 +568,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 			case Pow: case Sin: case Cos: case Tan: case Log: case Log10:
 			case Exp: case Sqrt: case Cbrt: case Ceil: case Absl: case DEO:
 			case Floor: case Round: case Rand: case SearchA: case InquiryVCF:
-			case AlleleF: case Fisher:
+			case AlleleF: case Fisher: case LR: case PCA:
 				sysFncExec_syntax(kd);
 
 				break;
@@ -623,7 +627,7 @@ void Bcode::factor() //Lvar/Gvar IS SKIPPED FOR SOME REASON, AND STACK BECOMES B
 		case Pow: case Sin: case Cos: case Tan: case Log: case Log10:
 		case Exp: case Sqrt: case Cbrt: case Ceil: case Absl: case DEO:
 		case Floor: case Round: case Rand: case SearchA: case InquiryVCF:
-		case AlleleF: case Fisher:
+		case AlleleF: case Fisher: case LR: case PCA:
 			sysFncExec(kd);
 
 			break;
@@ -948,7 +952,7 @@ void Bcode::sysFncExec_syntax(TknKind kd)
 
 			break;
 
-		case Fisher:
+		case Fisher: case LR: case PCA:
 			code = nextCode();
 			code = chk_nextCode(code, '(');
 			code = chk_nextCode(code, String);
@@ -1219,7 +1223,75 @@ void Bcode::sysFncExec(TknKind kd)
 			code = nextCode(); //Skip RParen
 
 			double temp = Bbfunc::VCFChunkLoader_FET(chrom, nation,
-				disease_type,  query);
+				disease_type, query);
+
+			stk.push(temp);
+
+			break;
+		}
+
+		case LR:
+		{
+			std::string chrom, nation, disease_type, query;
+
+			code = nextCode(); //LParen
+			code = nextCode(); //String
+
+			chrom = code.text;
+
+			code = nextCode(); //Comma
+			code = nextCode(); //String
+
+			query = code.text; //obtain POS query
+
+			code = nextCode(); //Comma
+			code = nextCode(); //String
+
+			nation = code.text;
+
+			code = nextCode(); //Comma
+			code = nextCode(); //String
+
+			disease_type = code.text;
+
+			code = nextCode(); //Skip RParen
+
+			double temp = Bbfunc::VCFChunkLoader_FullSize(chrom, nation,
+				disease_type, query, 0);
+
+			stk.push(temp);
+
+			break;
+		}
+
+		case PCA:
+		{
+			std::string chrom, nation, disease_type, query;
+
+			code = nextCode(); //LParen
+			code = nextCode(); //String
+
+			chrom = code.text;
+
+			code = nextCode(); //Comma
+			code = nextCode(); //String
+
+			query = code.text; //obtain POS query
+
+			code = nextCode(); //Comma
+			code = nextCode(); //String
+
+			nation = code.text;
+
+			code = nextCode(); //Comma
+			code = nextCode(); //String
+
+			disease_type = code.text;
+
+			code = nextCode(); //Skip RParen
+
+			double temp = Bbfunc::VCFChunkLoader_FullSize(chrom, nation,
+				disease_type, query, 1);
 
 			stk.push(temp);
 

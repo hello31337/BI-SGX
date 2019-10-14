@@ -1180,53 +1180,15 @@ void FisherExactTest_core(std::vector<std::vector<char>> &ContingencyTable,
 }
 
 
-void FET_Swap(std::vector<uint64_t> &vec, uint64_t i, uint64_t j)
+int qsort_compare(const void *a, const void *b)
 {
-	int temp;
-	temp = vec[i];
-	vec[i] = vec[j];
-	vec[j] = temp;
-}
+	uint64_t *A = (uint64_t*)a;
+	uint64_t *B = (uint64_t*)b;
 
+	if(*A > *B) return 1;
+	if(*A < *B) return -1;
 
-void FET_QuickSort(std::vector<uint64_t> &vec, uint64_t left, uint64_t right)
-{
-	int i, j, pivot;
-
-	i = left;
-	j = right;
-
-	pivot = vec[(left + right) / 2];
-
-	while(1)
-	{
-		while(vec[i] < pivot)
-		{
-			i++;
-		}
-
-		while(pivot < vec[j])
-		{
-			j--;
-		}
-
-		if(i >= j) break;
-
-		FET_Swap(vec, i, j);
-
-		i++;
-		j--;
-	}
-
-	if(left < i - 1)
-	{
-		FET_QuickSort(vec, left, i - 1);
-	}
-
-	if(j + 1 < right)
-	{
-		FET_QuickSort(vec, j + 1, right);
-	}
+	return 0;
 }
 
 
@@ -1821,66 +1783,7 @@ double Bbfunc::VCFChunkLoader(std::string chrom, uint64_t position,
 				final_ret = AlleleFreqAnalysis(plain_vcf, &alfq, chrom,
 					position, nation, disease_type, match_flag);
 			}
-			else if(mode == 1) // Fisher's exact test
-			{
-				std::vector<uint64_t> pos_query;
-
-				char *pos_token;
-				char *tail_pos_tk;
-				
-				if(query == "")
-				{
-					Bmain::result_str = "No matched result.";
-					return -1.0;
-				}
-
-				pos_token = strtok_r((char*)query.c_str(), ";", &tail_pos_tk);
-
-				do
-				{
-					pos_query.push_back(strtoul(pos_token, NULL, 10));
-				}
-				while((pos_token = strtok_r(NULL, ";", &tail_pos_tk)) != NULL);
-
-				/* sort query array */
-				uint64_t max_idx = 0, min_idx = 0;
-				uint64_t max_pos = 0;
-				uint64_t min_pos = ULONG_MAX;
-				int query_size = pos_query.size();
-
-
-				for(int i = 0; i < query_size; i++)
-				{
-					if(pos_query[i] < min_pos)
-					{
-						min_pos = pos_query[i];
-						min_idx = i;
-					}
-					else if(pos_query[i] > max_pos)
-					{
-						max_pos = pos_query[i];
-						max_idx = i;
-					}
-				}
-
-				for(int i = 0; i < query_size; i++)
-				{
-					OCALL_print_int(pos_query[i]);
-				}
-
-				FET_QuickSort(pos_query, min_idx, max_idx);
-
-				for(int i = 0; i < query_size; i++)
-				{
-					OCALL_print_int(pos_query[i]);
-				}
-
-				/*
-				final_ret = FisherExactTest(plain_vcf, &fet, chrom, 
-					pos_query, nation, disease_type, match_flag);
-				*/
-
-			}
+			
 
 			delete(vcf_chunk);
 			delete(div_filename);
@@ -1976,31 +1879,27 @@ double Bbfunc::VCFChunkLoader_FET(std::string chrom, std::string nation,
 	while((pos_token = strtok_r(NULL, ";", &tail_pos_tk)) != NULL);
 
 
+
 	/* sort query array */
-	uint64_t max_idx = 0, min_idx = 0;
-	uint64_t max_pos = 0;
-	uint64_t min_pos = ULONG_MAX;
 	int query_size = pos_query.size();
 
-	if(query_size > 1)
-	{
-		for(int i = 0; i < query_size; i++)
-		{
-			if(pos_query[i] < min_pos)
-			{
-				min_pos = pos_query[i];
-				min_idx = i;
-			}
-			else if(pos_query[i] > max_pos)
-			{
-				max_pos = pos_query[i];
-				max_idx = i;
-			}
-		}
-		
+	uint64_t *sort_temp = new uint64_t[query_size]();
 
-		FET_QuickSort(pos_query, min_idx, max_idx);
+	for(int i = 0; i < query_size; i++)
+	{
+		sort_temp[i] = pos_query[i];
 	}
+
+	qsort(sort_temp, query_size, sizeof(uint64_t), qsort_compare);
+
+	for(int i = 0; i < query_size; i++)
+	{
+		pos_query[i] = sort_temp[i];
+	}
+
+	delete(sort_temp);
+
+
 
 	/* calculate entire size of filenames */
 	status = OCALL_calc_inquiryVCTX_size(&ocall_ret, dummy_array, 32, 
@@ -2590,6 +2489,153 @@ double Bbfunc::VCFChunkLoader_FET(std::string chrom, std::string nation,
 }
 
 
+double VCFParser_FullSize(uint8_t *plain_vcf, 
+	std::vector<std::vector<std::vector<char>>> &snp_vec,
+	std::string chrom, std::vector<uint64_t> &pos_query, int &query_index,
+	int nation_kind, int matched_flag)
+{
+	/*
+	 * 1. convert query to array of uint64_t
+	 * 2. sort the array
+	 * 3. compare with actual position and skip query if need
+	*/
+
+	char *tail_line_tk;
+	char *line_token = strtok_r((char*)plain_vcf, "\n", &tail_line_tk);
+
+
+	do
+	{
+		if(matched_flag == 0) continue;
+		if(line_token[0] == '#') continue;
+
+
+		/* start parsing vcf line */
+		char *tail_column_tk;
+		char *column_token = strtok_r(line_token, "\t", &tail_column_tk);
+
+		/* compare chromosome number */
+		if(chrom != "")
+		{
+			if(column_token != chrom) continue;
+		}
+
+
+		/* compare position */
+		column_token = strtok_r(NULL, "\t", &tail_column_tk);
+		
+		size_t query_size = pos_query.size();
+		int pos_clear_flag = 0;
+		int cur_pos = 0;
+		uint64_t tokened_pos = strtoul(column_token, NULL, 10);
+		
+
+
+		if(query_index >= query_size) continue;
+
+		while((pos_query[query_index] < tokened_pos) 
+			&& (query_index < query_size))
+		{
+			query_index++;
+		}
+
+		if(pos_query[query_index] != tokened_pos)
+		{
+			continue;
+		}
+		
+
+
+		/* discard refID, SNP info, QUAL, FILTER, INFO, FORMAT */
+		for(int i = 0; i < 7; i++)
+		{
+			column_token = strtok_r(NULL, "\t", &tail_column_tk);
+		}
+
+
+		/* start parsing allele data */
+		/* WARNING: haploid is currently NOT SUPPORTED */
+		while((column_token = strtok_r(NULL, "\t", &tail_column_tk)) != NULL)
+		{
+			/* truncate extra formats */
+			char *pair_token;
+			char *tail_pair_tk;
+
+			pair_token = strtok_r(column_token, ";", &tail_pair_tk);
+
+			std::string allele1 = "";
+			std::string allele2 = "";
+			int token_index = 0;
+			
+			size_t pair_tk_size = strlen(pair_token);
+
+			/* obtain allele1 */
+			if(pair_token[token_index] == '.')
+			{
+				token_index += 2;
+			}
+			else
+			{
+				while(pair_token[token_index] != '|' && pair_token[token_index] != '/')
+				{
+					allele1 += pair_token[token_index];
+					token_index++;
+				}
+
+				token_index++;
+			}
+			
+			/* obtain allele2 */
+			if(pair_token[token_index] != '.')
+			{
+				while(token_index < pair_tk_size)
+				{
+					allele2 += pair_token[token_index];
+					token_index++;
+				}
+			}
+
+
+			/* 
+			 * categorize obtained allele: 
+			 *  - [][][0] -> 0|0
+			 *  - [][][1] -> x|0 or 0|x; where x > 0
+			 *  - [][][2] -> x|x or y|x or x|y; where y > 0 && x > 0
+			 *  - [][][3] -> .|n or n|. or .|.
+			 */
+
+
+			if(allele1 == "0" && allele2 == "0")
+			{
+				snp_vec[query_index][nation_kind].emplace_back(0);
+			}
+			else if((allele1 == "0" || allele2 == "0") 
+					&& (allele1 != "." && allele2 != "."))
+			{
+				snp_vec[query_index][nation_kind].emplace_back(1);
+			}
+			else if((allele1 != "0" && allele2 != "0")
+					&& (allele1 != "." && allele2 != "."))
+			{
+				snp_vec[query_index][nation_kind].emplace_back(2);
+			}
+			else
+			{
+				snp_vec[query_index][nation_kind].emplace_back(3);
+			}
+		}
+
+		query_index++;
+
+	}
+	while ((line_token = strtok_r(NULL, "\n", &tail_line_tk)) != NULL);
+
+
+	return 0.0;
+}
+
+
+
 double Bbfunc::VCFChunkLoader_FullSize(std::string chrom, std::string nation, 
 	std::string disease_type, std::string &query, int mode)
 {
@@ -2625,31 +2671,27 @@ double Bbfunc::VCFChunkLoader_FullSize(std::string chrom, std::string nation,
 	while((pos_token = strtok_r(NULL, ";", &tail_pos_tk)) != NULL);
 
 
+
 	/* sort query array */
-	uint64_t max_idx = 0, min_idx = 0;
-	uint64_t max_pos = 0;
-	uint64_t min_pos = ULONG_MAX;
 	int query_size = pos_query.size();
 
-	if(query_size > 1)
-	{
-		for(int i = 0; i < query_size; i++)
-		{
-			if(pos_query[i] < min_pos)
-			{
-				min_pos = pos_query[i];
-				min_idx = i;
-			}
-			else if(pos_query[i] > max_pos)
-			{
-				max_pos = pos_query[i];
-				max_idx = i;
-			}
-		}
-		
+	uint64_t *sort_temp = new uint64_t[query_size]();
 
-		FET_QuickSort(pos_query, min_idx, max_idx);
+	for(int i = 0; i < query_size; i++)
+	{
+		sort_temp[i] = pos_query[i];
 	}
+
+	qsort(sort_temp, query_size, sizeof(uint64_t), qsort_compare);
+
+	for(int i = 0; i < query_size; i++)
+	{
+		pos_query[i] = sort_temp[i];
+	}
+
+	delete(sort_temp);
+
+
 
 	/* calculate entire size of filenames */
 	status = OCALL_calc_inquiryVCTX_size(&ocall_ret, dummy_array, 32, 
@@ -2858,32 +2900,47 @@ double Bbfunc::VCFChunkLoader_FullSize(std::string chrom, std::string nation,
 		}
 	}
 
+	/*
+	for(int i = 0; i < filename_vec.size(); i++)
+	{
+		OCALL_print(filename_vec[i].c_str());
+	}
+
+	OCALL_print(" ");
+
+	for(int i = 0; i < matched_list.size(); i++)
+	{
+		OCALL_print(matched_list[i].c_str());
+	}
+
+	for(int i = 0; i < matched_nation_type.size(); i++)
+	{
+		OCALL_print_int(matched_nation_type[i]);
+	}
+
+
+	return 0.0;
+	*/
 
 
 	/* declare vector for contingency table */
-	std::vector<std::vector<std::vector<char>>> contig_table;
-	size_t registered_num = 0;
+	std::vector<std::vector<std::vector<char>>> snp_vec;
+	std::vector<double> p_value_vec;
 	
+
 	for(int i = 0; i < query_size; i++)
 	{
-		contig_table.emplace_back();
+		snp_vec.emplace_back();
 
 		for(int j = 0; j < nlist_size; j++)
 		{
-			contig_table[i].emplace_back();
-
-			for(int k = 0; k < 4; k++)
-			{
-				/*
-				 * [0]: total of "0/0"
-				 * [1]: total of "x/0" and "0/x", which x is minor allele
-				 * [2]: total of "x/x"
-				 * [3]: total of corrupted data i.e. including "." like "./0"
-				 */
-
-				 contig_table[i][j].push_back(0);
-			}
+			snp_vec[i].emplace_back();
 		}
+	}
+
+	for(int i = 0; i < 2; i++)
+	{
+		p_value_vec.push_back(0.0);
 	}
 
 	int match_index = 0;
@@ -3137,9 +3194,17 @@ double Bbfunc::VCFChunkLoader_FullSize(std::string chrom, std::string nation,
 				throw std::string("Failed to decrypt stored VCF.");
 			}
 
-			
-			/* execute FET */
-			final_ret = FisherExactTest(plain_vcf, contig_table, chrom,
+			/*
+			for(int i = 0; i < matched_nation_type.size(); i++)
+			{
+				OCALL_print_int(matched_nation_type[i]);
+			}
+			OCALL_print_int(matched_nation_type.size());
+			OCALL_print_int(match_index);
+			*/
+
+			/* execute VCF parsing */
+			final_ret = VCFParser_FullSize(plain_vcf, snp_vec, chrom,
 				pos_query, pos_index, matched_nation_type[match_index - 1], 
 				match_flag);
 
@@ -3152,6 +3217,12 @@ double Bbfunc::VCFChunkLoader_FullSize(std::string chrom, std::string nation,
 			delete(plain_vcf);
 		}
 
+		
+		/*
+		for(int i = 0; i < 4; i++)
+			OCALL_print_int((int)contig_table[0][0][i]);
+		*/
+
 
 		delete(sealed_key);
 		delete(flnm_to_pass);
@@ -3159,12 +3230,28 @@ double Bbfunc::VCFChunkLoader_FullSize(std::string chrom, std::string nation,
 		delete(iv_array);
 		delete(tag_array);
 
-	} //while((token_div = strtok(NULL, "\n")) != NULL);
+	}
 
-	/* finalize result */
-		
-	//Bmain::result_str = "";
+	/* check contingency table */
+	/*
+	for(int i = 0; i < query_size; i++)
+	{
+		for(int j = 0; j < nlist_size; j++)
+		{
+			for(int k = 0; k < 4; k++)
+			{
+				Bmain::result_str += std::to_string(contig_table[i][j][k]);
+				Bmain::result_str += ",";
+			}
+
+			Bmain::result_str.pop_back();
+			Bmain::result_str += " | ";
+		}
+
+		Bmain::result_str.pop_back();
+		Bmain::result_str += "\n";
+	}
+	*/	
 
 	return 0.0;
 }
-

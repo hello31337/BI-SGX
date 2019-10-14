@@ -77,7 +77,7 @@ enum TknKind
 	Func = 150,		Var,	If,		Elif,	Else,	For,	To,
 	Step,	While,	End,	Break,	Return,	Option,	Print,	Println,
 	Average,Edist,	Galign,	Pow,	InquiryDB,	InquiryVCF,
-	AlleleF,Fisher,
+	AlleleF,Fisher, LR,		PCA,
 	Sin,	Cos,	Tan,	Log,	Log10,	Exp,	Sqrt,	Cbrt,
 	Ceil,	Absl,	Floor,	Round,	Rand,	SearchA,	DEO,
 	Input,	Toint,	Exit,	Equal,	NotEq,	
