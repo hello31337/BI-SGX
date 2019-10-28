@@ -26,6 +26,7 @@ in the License.
 #include <sgx_tkey_exchange.h>
 #include <sgx_tcrypto.h>
 #include <sgx_tseal.h>
+#include <sgx_trts.h>
 
 #include "BISGX.h"
 
