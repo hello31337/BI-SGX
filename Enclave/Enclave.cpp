@@ -26,6 +26,7 @@ in the License.
 #include <sgx_tkey_exchange.h>
 #include <sgx_tcrypto.h>
 #include <sgx_tseal.h>
+#include <sgx_trts.h>
 
 #include "BISGX.h"
 
@@ -41,6 +42,11 @@ namespace Blex
 namespace Bparse
 {
 	extern void convert_to_internalCode(std::string code);
+}
+
+namespace Bmath
+{
+	extern double generateTrustedRandomNumber(int min, int max);
 }
 
 static const sgx_ec256_public_t def_service_public_key = {
@@ -810,8 +816,9 @@ sgx_status_t process_extract_filename(sgx_ra_context_t context,
 sgx_status_t store_vcf_contexts(sgx_ra_context_t context, 
 	uint8_t *vctx_cipher, size_t vctx_cipherlen, uint8_t *vctx_iv,
 	uint8_t *vctx_tag, uint8_t *iv_array, size_t ivlen, 
-	uint8_t *tag_array, size_t taglen, uint8_t *error_msg_cipher, 
-	size_t emsg_len, size_t *emsg_cipher_len)
+	uint8_t *tag_array, size_t taglen, int *divnum_ret,
+	uint8_t *error_msg_cipher, size_t emsg_len, size_t *emsg_cipher_len,
+	uint8_t *emsg_iv, uint8_t *emsg_tag)
 {
 	sgx_status_t status = SGX_SUCCESS;
 	sgx_ec_key_128bit_t sk_key;
@@ -959,6 +966,7 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 
 	token_div = strtok(NULL, "\n");
 	divnum = strtol(token_div, NULL, 10);
+	*divnum_ret = divnum;
 
 	
 	/* obtain SHA-256 of attributions and username */
@@ -1239,7 +1247,12 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 
 
 	/* encrypt status message */
-	OCALL_generate_nonce(vctx_iv, 12);
+	OCALL_generate_nonce(emsg_iv, 12);
+
+	for(int i = 0; i < 12; i++)
+	{
+		iv_t[i] = emsg_iv[i];
+	}
 
 	/*AES/GCM's cipher length is equal to the length of plain text*/
 	status = sgx_rijndael128GCM_encrypt(&sk_key, error_msg, emsg_len,
@@ -1254,16 +1267,253 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 
 	for(int i = 0; i < 16; i++)
 	{
-		vctx_tag[i] = tag_t[i];
+		emsg_tag[i] = tag_t[i];
 	}
 
 	for(int i = 0; i < 12; i++)
 	{
-		vctx_iv[i] = iv_t[i];
+		emsg_iv[i] = iv_t[i];
 	}
 
 	delete(vcf_context);
 	delete(iv_t);
+
+	return SGX_SUCCESS;
+}
+
+
+
+sgx_status_t generate_oram_fileset(sgx_ra_context_t context, 
+	uint8_t *filename, int divnum, uint8_t *cpl_cipher, size_t cpl_deflen, 
+	uint8_t *iv_cpl, uint8_t *tag_cpl, uint8_t *iv_array, size_t iv_array_len,
+	uint8_t *tag_array, size_t tag_array_len, uint8_t *vctx_cipher, 
+	size_t vctx_deflen, uint8_t *iv_vctx, uint8_t *tag_vctx, 
+	uint8_t *error_msg_cipher, size_t emsg_len, size_t *emsg_cipher_len, 
+	uint8_t *emsg_iv, uint8_t *emsg_tag, size_t slot_size)
+{
+	sgx_status_t status = SGX_SUCCESS;
+	sgx_ec_key_128bit_t sk_key;
+	
+	/*Get session key SK to decrypt secret*/
+	status = sgx_ra_get_keys(context, SGX_RA_KEY_SK, &sk_key);
+
+	if(status != SGX_SUCCESS)
+	{
+		const char* message = "Error while obtaining session key.";
+		OCALL_print(message);
+		OCALL_print_status(status);
+		return status;
+	}
+	
+	uint32_t p_iv_len = 12;
+	uint8_t *vcf_context = new uint8_t[vctx_deflen + 16]();
+	
+	sgx_aes_gcm_128bit_tag_t tag_t;
+	uint8_t *iv_t = new uint8_t[p_iv_len]();
+
+	
+	/* decrypt previous error message */
+	for(int i = 0; i < 16; i++)
+	{
+		tag_t[i] = emsg_tag[i];
+	}
+
+	for(int i = 0; i < 12; i++)
+	{
+		iv_t[i] = emsg_iv[i];
+	}
+
+	
+	uint8_t *emsg_tmp = new uint8_t[*emsg_cipher_len + 1]();
+
+	status = sgx_rijndael128GCM_decrypt(&sk_key, error_msg_cipher,
+		*emsg_cipher_len, emsg_tmp, iv_t, 12, NULL, 0, &tag_t);
+
+	if(status != SGX_SUCCESS)
+	{
+		const char *message = "Error while decrypting error message cipher.";
+		OCALL_print(message);
+		OCALL_print_status(status);
+		return status;
+	}
+
+	std::string emsg_str((char*)emsg_tmp);
+
+	delete(emsg_tmp);
+
+
+	/* decrypt VCF context */
+	for(int i = 0; i < 16; i++)
+	{
+		tag_t[i] = tag_vctx[i];
+	}
+
+	for(int i = 0; i < p_iv_len; i++)
+	{
+		iv_t[i] = iv_vctx[i];
+	}
+
+
+	OCALL_print("INFO: debug display:");
+	OCALL_dump(vctx_cipher, vctx_deflen);
+	OCALL_print(" ");
+	OCALL_dump(iv_t, 12);
+	OCALL_print(" ");
+	OCALL_dump(tag_vctx, 16);
+
+	status = sgx_rijndael128GCM_decrypt(&sk_key, vctx_cipher,
+		vctx_deflen, vcf_context, iv_t, p_iv_len, NULL, 0, &tag_t);
+
+
+	if(status != SGX_SUCCESS)
+	{
+		const char* message = "Error while decrypting SP's secret.";
+		OCALL_print(message);
+		OCALL_print_status(status);
+		return status;
+	}
+
+	
+
+
+	/* obtain information necessary for ORAM management */
+	char *token_div;
+	std::string nation, chrom;
+
+
+	token_div = strtok((char*)vcf_context, "\n"); //discard whitelist
+
+
+	/* obtain chromosome number */
+	token_div = strtok(NULL, "\n");
+	chrom = std::string(token_div);
+	
+	
+	/* obtain nation info */
+	token_div = strtok(NULL, "\n");
+	nation = std::string(token_div);
+
+
+	token_div = strtok(NULL, "\n"); //discard disease type
+	token_div = strtok(NULL, "\n"); //then filename
+
+
+	delete(vcf_context);
+
+
+	/* decrypt cipher of chunk-head position list */
+	uint8_t *chunk_pos_list = new uint8_t[cpl_deflen + 16]();
+
+
+	for(int i = 0; i < 16; i++)
+	{
+		tag_t[i] = tag_cpl[i];
+	}
+
+	for(int i = 0; i < p_iv_len; i++)
+	{
+		iv_t[i] = iv_cpl[i];
+	}
+
+
+	status = sgx_rijndael128GCM_decrypt(&sk_key, cpl_cipher,
+		cpl_deflen, chunk_pos_list, iv_t, p_iv_len, NULL, 0, &tag_t);
+
+	
+
+	/* prepare for chunk processing loop */
+	std::string ctx_prefix = nation + std::string("_") 
+		+ chrom + std::string("_");
+
+	/* obtain nearest 2^n value larger than divnum */
+	int fileset_total = divnum * slot_size;
+	
+
+	if((fileset_total & (fileset_total - 1)) != 0)
+	{
+		uint32_t bit_scan = 1;
+
+		while(fileset_total > 0)
+		{
+			bit_scan <<= 1;
+			fileset_total >>= 1;
+		}
+
+		fileset_total = bit_scan;
+	}
+
+	int tdata_counter = 0;
+	char *pos_token;
+	char *pos_token_tail;
+	std::string context_list; //format ex.: "21_JPT_10000;1.bin"
+
+	/* decide range of random number */
+	int rng_range = fileset_total / divnum;
+	
+	/* parse position list and generate fileset */
+	pos_token = strtok_r((char*)chunk_pos_list, "\n", &pos_token_tail);
+
+	do
+	{
+		std::string chunk_context = 
+			ctx_prefix + std::string((char*)pos_token);
+		
+		chunk_context += ";";
+		
+		int obtained_rn = 
+			(int)Bmath::generateTrustedRandomNumber(0, rng_range - 1);
+
+		for(int i = 0; i < rng_range; i++)
+		{
+			
+		}
+	}
+	while (pos_token = strtok_r(NULL, "\n", &pos_token_tail));
+
+
+
+	/* encrypt status message */
+	emsg_len = emsg_str.length() + 1;
+	*emsg_cipher_len = emsg_len;
+	
+	emsg_tmp = new uint8_t[emsg_len]();
+	
+	for(int i = 0; i < emsg_len; i++)
+	{
+		emsg_tmp[i] = (uint8_t)emsg_str.c_str()[i];
+	}
+
+
+	OCALL_generate_nonce(emsg_iv, 12);
+
+	for(int i = 0; i < 12; i++)
+	{
+		iv_t[i] = emsg_iv[i];
+	}
+
+	for(int i = 0; i < emsg_len; i++)
+	{
+		error_msg_cipher[i] = '\0';
+	}
+
+
+
+	/*AES/GCM's cipher length is equal to the length of plain text*/
+	status = sgx_rijndael128GCM_encrypt(&sk_key, emsg_tmp, emsg_len,
+		error_msg_cipher, iv_t, 12, NULL, 0, &tag_t);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print("Error while encrypting result.");
+		OCALL_print_status(status);
+		return status;
+	}
+
+	for(int i = 0; i < 16; i++)
+	{
+		emsg_tag[i] = tag_t[i];
+	}
+
 
 	return SGX_SUCCESS;
 }

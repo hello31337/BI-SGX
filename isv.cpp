@@ -484,7 +484,7 @@ int BISGX_Database::do_store_vctx(string whitelist, string chrom,
 	string nation, string disease_type,	string filename, string username, 
 	int div_total, string iv_array, string tag_array)
 {
-	table = "vcf_context";
+	table = "vcf_context_oram";
 
 	try
 	{
@@ -513,7 +513,7 @@ int BISGX_Database::do_inquiryVCTX(string chrom, string nation, string disease_t
 	string *result)
 {
 	/* NEED TO IMPLEMENT REJECTION FEATURE USING WHITELIST */
-	table = "vcf_context";
+	table = "vcf_context_oram";
 
 	string null_str = "";
 
@@ -524,7 +524,7 @@ int BISGX_Database::do_inquiryVCTX(string chrom, string nation, string disease_t
 
 	try
 	{
-		string cmd = "SELECT tar_filename FROM vcf_context";
+		string cmd = "SELECT tar_filename FROM vcf_context_oram";
 		
 		if(chrom != null_str || nation != null_str || disease_type != null_str)
 		{
@@ -591,7 +591,7 @@ int BISGX_Database::do_inquiryVCTX(string chrom, string nation, string disease_t
 
 size_t BISGX_Database::get_divnum(string filename)
 {
-	string cmd = "SELECT div_total FROM vcf_context WHERE tar_filename='";
+	string cmd = "SELECT div_total FROM vcf_context_oram WHERE tar_filename='";
 	cmd += filename;
 	cmd += "'";
 	
@@ -621,7 +621,7 @@ size_t BISGX_Database::get_divnum(string filename)
 
 int BISGX_Database::get_IV_and_tag(uint8_t *iv_b64, uint8_t *tag_b64, string filename)
 {
-	string cmd = "SELECT iv_array, tag_array FROM vcf_context WHERE tar_filename='";
+	string cmd = "SELECT iv_array, tag_array FROM vcf_context_oram WHERE tar_filename='";
 	cmd += filename;
 	cmd += "'";
 
@@ -950,6 +950,7 @@ int OCALL_store_vctx_into_db(uint8_t *whitelist, size_t wlst_size,
 		sprintf((char*)&usnm_hash_hex[i*2], "%02x", usnm_hash[i]);
 	}
 
+	
 	string wlst_str((char*)whitelist_b64);
 	string chrm_str((char*)chrm_hash_hex);
 	string natn_str((char*)natn_hash_hex);
@@ -959,6 +960,8 @@ int OCALL_store_vctx_into_db(uint8_t *whitelist, size_t wlst_size,
 	string iv_array_str((char*)iv_array);
 	string tag_array_str((char*)tag_array);
 
+
+	/*
 	cout << wlst_str << endl << endl;
 	cout << chrm_str << endl << endl;
 	cout << natn_str << endl << endl;
@@ -971,6 +974,7 @@ int OCALL_store_vctx_into_db(uint8_t *whitelist, size_t wlst_size,
 
 	cout << iv_array_str << endl << endl;
 	cout << tag_array_str << endl << endl;
+	*/
 
 	int flag = bdb.do_store_vctx(wlst_str, chrm_str, natn_str, dstp_str,
 		flnm_str, usnm_str, divnum, iv_array_str, tag_array_str);
@@ -2025,6 +2029,7 @@ int main (int argc, char *argv[])
 			cout << "tarball size: " << tarball_size << endl;
 
 
+
 			int round_num = tarball_size / ROUND_UNIT;
 
 			if(tarball_size % ROUND_UNIT != 0)
@@ -2129,7 +2134,158 @@ int main (int argc, char *argv[])
 			{
 				tag_array[i] = tag_dummy[i];
 			}
+
+
+			/* receive chunk-head position list for ORAM */
+			void **received_cpl;
+			void **received_iv_cpl;
+			void **received_tag_cpl;
+			void **received_deflen_cpl;
+			size_t cpl_b64len, cpl_iv_b64len;
+			size_t cpl_tag_b64len, cpl_deflen_b64len;
+
+			uint8_t *uchar_cpl_b64;
+			uint8_t *uchar_iv_cpl_b64;
+			uint8_t *uchar_tag_cpl_b64;
+			uint8_t *uchar_deflen_cpl_b64;
+
+
+			/* receive cipher */
+			rv = msgio->read_nd((void **) &received_cpl, &sz);
+			cpl_b64len = sz;
+
+			if(rv != 1)
+			{
+				msgio_read_error_check(rv, "secret");
+				return -1;
+			}
+
+			uchar_cpl_b64 = new uint8_t[sz + 1]();
+			void_to_uchar = (uint8_t*)received_cpl;
+
+			for(int i = 0; i < sz; i++)
+			{
+				uchar_cpl_b64[i] = void_to_uchar[i];
+			}
+
+
+			/* receive IV for cpl */
+			rv = msgio->read_nd((void **) &received_iv_cpl, &sz);
+			cpl_iv_b64len = sz;
+
+			if(rv != 1)
+			{
+				msgio_read_error_check(rv, "IV");
+				return -1;
+			}
+
+			uchar_iv_cpl_b64 = new uint8_t[sz + 1]();
+			void_to_uchar = (uint8_t*)received_iv_cpl;
+
+			for(int i = 0; i < sz; i++)
+			{
+				uchar_iv_cpl_b64[i] = void_to_uchar[i];
+			}
+
+
+
+			/* receive tag for cpl */
+			rv = msgio->read_nd((void **) &received_tag_cpl, &sz);
+			cpl_tag_b64len = sz;
+
+			if(rv != 1)
+			{
+				msgio_read_error_check(rv, "MAC tag");
+				return -1;
+			}
+
+			uchar_tag_cpl_b64 = new uint8_t[sz + 1]();
+			void_to_uchar = (uint8_t*)received_tag_cpl;
 			
+			for(int i = 0; i < sz; i++)
+			{
+				uchar_tag_cpl_b64[i] = void_to_uchar[i];
+			}
+
+
+
+			/* receive default length of cipher for cpl */
+			rv = msgio->read_nd((void **) &received_deflen_cpl, &sz);
+			cpl_deflen_b64len = sz;
+
+			if(rv != 1)
+			{
+				msgio_read_error_check(rv, "default cipher length");
+				return -1;
+			}
+
+			uchar_deflen_cpl_b64 = new uint8_t[sz + 1]();
+			void_to_uchar = (uint8_t*)received_deflen_cpl;
+
+			for(int i = 0; i < sz; i++)
+			{
+				uchar_deflen_cpl_b64[i] = void_to_uchar[i];
+			}
+
+			
+
+			cout << "IVb64:" << endl;
+			cout << uchar_iv_cpl_b64 << endl;
+
+			cout << "Tagb64:" << endl;
+			cout << uchar_tag_cpl_b64 << endl;
+
+			cout << "deflenb64:" << endl;
+			cout << uchar_deflen_cpl_b64 << endl;
+
+			cout << "cplb64:" << endl;
+			cout << uchar_cpl_b64 << endl;
+
+
+			/*
+			 * allocate heap excessively to avoid error with
+			 *  base64 function
+			 */
+			int cpl_deflen;
+			uint8_t *cpl_cipher;
+			uint8_t *iv_cpl = new uint8_t[32]();
+			uint8_t *tag_cpl = new uint8_t[32]();
+			uint8_t *deflen_cpl_tmp = new uint8_t[128]();
+
+
+			/* cpl cipher length */
+			rettmp = base64_decrypt(uchar_deflen_cpl_b64,
+				cpl_deflen_b64len, deflen_cpl_tmp, 128);
+
+			cpl_deflen = strtol((char*)deflen_cpl_tmp, NULL, 10);
+
+
+			/* cpl cipher */
+			cpl_cipher = new uint8_t[cpl_deflen + 16]();
+
+			rettmp = base64_decrypt(uchar_cpl_b64,
+				cpl_b64len, cpl_cipher, cpl_deflen + 16);
+
+
+			/* IV for cpl cipher */
+			rettmp = base64_decrypt(uchar_iv_cpl_b64, 
+				cpl_iv_b64len, iv_cpl, 32);
+
+
+			/* MAC tag for cpl cipher*/
+			rettmp = base64_decrypt(uchar_tag_cpl_b64,
+				cpl_tag_b64len, tag_cpl, 32);
+
+			
+			/*
+			 * passing above cpl contexts to enclave is conducted 
+			 * after extracting tarball.
+			 */
+
+
+
+
+
 			/* extract data from tarball */
 			string tar_cmd = "tar -xvf " + string((char*)tar_filename);
 			tar_cmd += ".tar";
@@ -2170,13 +2326,62 @@ int main (int argc, char *argv[])
 			
 
 			uint8_t *error_msg = new uint8_t[256]();
+			uint8_t *emsg_iv = new uint8_t[12]();
+			uint8_t *emsg_tag = new uint8_t[16]();
 			size_t emsg_cipher_len;
+			int divnum = 0;
 
+			
 			/* register vcf contexts */
 			vst = store_vcf_contexts(eid, &retval, g_ra_ctx, 
 				vctx_cipher, vctx_deflen, iv_vctx, tag_vctx, 
 				iv_array, iv_array_length + 1, tag_array, 
-				tag_array_length + 1, error_msg, 256, &emsg_cipher_len);
+				tag_array_length + 1, &divnum, error_msg, 256, 
+				&emsg_cipher_len, emsg_iv, emsg_tag);
+
+
+			
+			/* 
+			 * following is test-purpose ORAM-capable file storing flamework.
+			 * the number of slot for single node of ORAM is defined as 4.
+			 */
+
+			
+			vst = generate_oram_fileset(eid, &retval, g_ra_ctx,
+				tar_filename, divnum, cpl_cipher, cpl_deflen,
+				iv_cpl, tag_cpl, iv_array, iv_array_length + 1,
+				tag_array, tag_array_length + 1, vctx_cipher, 
+				vctx_deflen, iv_vctx, tag_vctx,	error_msg, 256,
+				&emsg_cipher_len, emsg_iv, emsg_tag, 4);
+			
+
+			cout << "Exited generate_oram_fileset successfully." << endl;
+
+
+			/*
+			string target_path_base = "encrypted_vcf/";
+			target_path_base += string((char*)tar_filename);
+			target_path_base += "/";
+			target_path_base += string((char*)tar_filename);
+			target_path_base += ".";
+
+
+			for(int cidx = 0; cidx < divnum; cidx++)
+			{
+				string target_path = target_path_base + to_string(cidx);
+				uint8_t *tp_uchar = new uint8_t[target_path.length() + 1]();
+
+				for(int i = 0; i < target_path.length(); i++)
+				{
+					for(int)
+				}
+
+
+			}
+			*/
+
+
+
 
 			
 			/*Convert result contexts to base64 format*/
@@ -2191,10 +2396,10 @@ int main (int argc, char *argv[])
 						res_cipherb64, emsg_cipher_len * 2);
 
 			/*Encode result IV*/
-			res_ivb64_len = base64_encrypt(iv_vctx, 12, res_ivb64, 64);
+			res_ivb64_len = base64_encrypt(emsg_iv, 12, res_ivb64, 64);
 
 			/*Encode result MAC tag*/
-			res_tagb64_len = base64_encrypt(tag_vctx, 16, res_tagb64, 64);
+			res_tagb64_len = base64_encrypt(emsg_tag, 16, res_tagb64, 64);
 
 			/*Encode result cipher's length*/
 			uint8_t *resdeflentmp = 

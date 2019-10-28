@@ -90,12 +90,27 @@ enclave {
 
 		public sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 			[in, size=vctx_cipherlen]uint8_t *vctx_cipher, 
-			size_t vctx_cipherlen, [in, out, size=12]uint8_t *vctx_iv, 
-			[in, out, size=16]uint8_t *vctx_tag, 
+			size_t vctx_cipherlen, [in, size=12]uint8_t *vctx_iv, 
+			[in, size=16]uint8_t *vctx_tag, 
 			[in, size=ivlen]uint8_t *iv_array, size_t ivlen, 
 			[in, size=taglen]uint8_t *tag_array, size_t taglen, 
+			[out]int *divnum_ret,
 			[out, size=emsg_len]uint8_t *error_msg_cipher, size_t emsg_len,
-			[out]size_t *emsg_cipher_len);
+			[out]size_t *emsg_cipher_len, [in, out, size=12]uint8_t *emsg_iv,
+			[in, out, size=16]uint8_t *emsg_tag);
+
+		public sgx_status_t generate_oram_fileset(sgx_ra_context_t context,
+			[in, size=16]uint8_t *filename, int divnum,
+			[in, size=cpl_deflen]uint8_t *cpl_cipher, size_t cpl_deflen,
+			[in, size=12]uint8_t *iv_cpl, [in, size=16]uint8_t *tag_cpl,
+			[in, size=iv_array_len]uint8_t *iv_array, size_t iv_array_len,
+			[in, size=tag_array_len]uint8_t *tag_array, size_t tag_array_len,
+			[in, size=vctx_deflen]uint8_t *vctx_cipher, size_t vctx_deflen,
+			[in, size=12]uint8_t *iv_vctx, [in, size=16]uint8_t *tag_vctx,
+			[in, out, size=emsg_len]uint8_t *error_msg_cipher, 
+			size_t emsg_len, [in, out]size_t *emsg_cipher_len, 
+			[in, out, size=12]uint8_t *emsg_iv, 
+			[in, out, size=16]uint8_t *emsg_tag, size_t slot_size);
 	};
 
 	untrusted {

@@ -153,7 +153,8 @@ int send_login_info(MsgIO *msgio, ra_session_t session,
 	string *username, string *datatype);
 
 int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key,
-	uint8_t *iv_array, uint8_t *tag_array, ifstream *vcf_ifs);
+	uint8_t *iv_array, uint8_t *tag_array, ifstream *vcf_ifs,
+	vector<string> &chunk_pos_list);
 
 chrono::system_clock::time_point chrono_start, chrono_end;
 
@@ -809,14 +810,14 @@ int main(int argc, char *argv[])
 				divnum = vcf_ifs.tellg();
 				vcf_ifs.seekg(0, ios::beg);
 
-				if(divnum % 20000000 != 0)
+				if(divnum % 1000000 != 0)
 				{
-					divnum /= 20000000;
+					divnum /= 1000000;
 					divnum += 1;
 				}
 				else
 				{
-					divnum /= 20000000;
+					divnum /= 1000000;
 				}
 
 
@@ -824,8 +825,12 @@ int main(int argc, char *argv[])
 				tag_array = new uint8_t[16 * divnum]();
 
 
+				/* prepare vector of position lists of chunks for ORAM */
+				vector<string> chunk_pos_list;
+
+
                 div_total = process_vcf(&tar_filename, &access_list, 
-					sp_key, iv_array, tag_array, &vcf_ifs);
+					sp_key, iv_array, tag_array, &vcf_ifs, chunk_pos_list);
 
 
 				/* remove temporary directory */
@@ -847,6 +852,7 @@ int main(int argc, char *argv[])
 
                 string wht_filename, whitelist, wht_tmp, chrom, nation, disease_type;
 
+				cin.clear();
                 cout << "\nInput filename of whitelist: ";
                 cin >> wht_filename;
                 cout << "\n" << endl;
@@ -960,7 +966,7 @@ int main(int argc, char *argv[])
 				msgio->send_nd(tag_vctxb64, tag_vctxb64_len);
 				usleep(250000);
 				msgio->send_nd(deflen_vctxb64, deflen_vctxb64_len);
-
+				usleep(250000);
 
 				/* destruct heaps for VCF */
 				delete(iv_vctx);
@@ -1078,6 +1084,98 @@ int main(int argc, char *argv[])
 					return -1;
 				}
 
+
+				/* process chunk-head position list to send */
+				size_t cpl_sz = 0;
+
+				for(int i = 0; i < chunk_pos_list.size(); i++)
+				{
+					cpl_sz += chunk_pos_list[i].size();
+					cpl_sz++;
+				}
+
+				//cpl_sz: total length of string + 1 byte for \0
+
+				uint8_t *u_cp_list = new uint8_t[cpl_sz]();
+				int cpl_index = 0;
+
+				for(int i = 0; i < chunk_pos_list.size(); i++)
+				{
+					for(int j = 0; j < chunk_pos_list[i].length(); j++)
+					{
+						u_cp_list[cpl_index] = chunk_pos_list[i][j];
+						cpl_index++;
+					}
+
+					u_cp_list[cpl_index] = '\n';
+					cpl_index++;
+				}
+
+				u_cp_list[cpl_sz - 1] = '\0';
+				
+
+
+				/* encrypt chunk-head position list */
+				uint8_t *iv_cpl = new uint8_t[12]();
+				uint8_t *tag_cpl = new uint8_t[16]();
+				uint8_t *cpl_cipher = new uint8_t[cpl_sz - 1]();
+				size_t cpl_cipher_length = 0;
+
+				iv_cpl = generate_nonce(12);
+
+                cpl_cipher_length = encrypt_data_for_ISV(u_cp_list,
+                    strlen((char*)u_cp_list), sp_key, iv_cpl,
+                    cpl_cipher, tag_cpl);
+
+
+				/* encode chunk-head position list to base64 */
+				uint8_t *cplb64 = new uint8_t[cpl_cipher_length * 2]();
+				uint8_t *iv_cplb64 = new uint8_t[24]();
+				uint8_t *tag_cplb64 = new uint8_t[32]();
+				uint8_t *deflen_cplb64 = new uint8_t[64]();
+				
+				size_t cplb64_len = 0;
+				size_t iv_cplb64_len = 0;
+				size_t tag_cplb64_len = 0;
+				size_t deflen_cplb64_len = 0;
+
+
+				cplb64_len = base64_encrypt(cpl_cipher, cpl_cipher_length,
+                    cplb64, cpl_cipher_length * 2);
+
+
+				uint8_t *cpllen_char = 
+					(uint8_t*)to_string(cpl_cipher_length).c_str();
+
+				
+				/* also encode other cipher contexts */
+				iv_cplb64_len = base64_encrypt(iv_cpl, 12, iv_cplb64, 24);
+				
+				tag_cplb64_len = base64_encrypt(tag_cpl, 16, tag_cplb64, 32);
+				
+				deflen_cplb64_len = base64_encrypt(cpllen_char, 
+					strlen((char*)cpllen_char), deflen_cplb64, 64);
+				
+
+				
+				/* send chunk-head position list to ISV */
+				msgio->send_nd(cplb64, cplb64_len);
+				usleep(250000);
+				msgio->send_nd(iv_cplb64, iv_cplb64_len);
+				usleep(250000);
+				msgio->send_nd(tag_cplb64, tag_cplb64_len);
+				usleep(250000);
+				msgio->send_nd(deflen_cplb64, deflen_cplb64_len);
+
+				
+				/* destruct heaps */
+				delete(iv_cpl);
+				delete(tag_cpl);
+				delete(cpl_cipher);
+				delete(cplb64);
+				delete(iv_cplb64);
+				delete(tag_cplb64);
+				delete(deflen_cplb64);
 			}
 			else
 			{
@@ -1402,6 +1500,7 @@ int main(int argc, char *argv[])
 				ofstream result_output("result.dat", ios::trunc);
 				result_output << result << endl;
 				result_output.close();
+
 			}
 		}
 		//end block to avoid goto error
@@ -2808,22 +2907,25 @@ int send_login_info(MsgIO *msgio, ra_session_t session,
 
 
 int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key, 
-	uint8_t *iv_array, uint8_t *tag_array, ifstream *vcf_ifs)
+	uint8_t *iv_array, uint8_t *tag_array, ifstream *vcf_ifs, 
+	vector<string> &chunk_pos_list)
 {
     size_t divnum = 0;
     vcf_ifs->seekg(0, ios::end);
     divnum = vcf_ifs->tellg();
     vcf_ifs->seekg(0, ios::beg);
 
-    if(divnum % 20000000 != 0)
+    if(divnum % 1000000 != 0)
     {
-        divnum /= 20000000;
+        divnum /= 1000000;
         divnum += 1;
     }
     else
     {
-        divnum /= 20000000;
+        divnum /= 1000000;
     }
+
+	cout << "num of chunks: "  << divnum << endl;
 
     /* randomly generate filename for tarball */
     *tar_filename = generate_random_filename();
@@ -2841,7 +2943,8 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key,
     /* start vcf division */
     int divided_total = 0;
     int part_size = 0;
-    string vcf_line, divided_vcf;
+	int is_poslist_updated = 0;
+	string vcf_line, divided_vcf;
     
     string divided_filename = "encrypted_vcf/";
     divided_filename += *tar_filename;
@@ -2858,11 +2961,38 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key,
         divided_vcf += vcf_line + '\n';
         part_size += vcf_line.length() + 1;
 
-        if(part_size > 20000000)
+		/* update chunk-head position list for ORAM */
+		if(is_poslist_updated == 0)
 		{
+			if(vcf_line[0] != '#')
+			{
+				stringstream line_ss(vcf_line);
+				string column_token;
+
+				getline(line_ss, column_token, '\t');
+				getline(line_ss, column_token, '\t');
+
+				chunk_pos_list.emplace_back(column_token);
+
+				is_poslist_updated++;
+			}
+		}
+
+        if(part_size > 1000000)
+		{
+			/* align divided_vcf's size to 20010000 byte */
+			size_t pad_sz = 1010000 - part_size;
+			
+			divided_vcf += "\n";
+
+			for(int i = 0; i < pad_sz - 1; i++)
+			{
+				divided_vcf += "#";
+			}
+
             uint8_t *iv_temp = new uint8_t[12]();
             uint8_t *tag_temp = new uint8_t[16]();
-            uint8_t *vcf_cipher = new uint8_t[30000000]();
+            uint8_t *vcf_cipher = new uint8_t[1500000]();
             int vcf_cipher_len = 0;
 
             iv_temp = generate_nonce(12);
@@ -2874,7 +3004,7 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key,
             }
 
             vcf_cipher_len = encrypt_data_for_ISV((uint8_t*)divided_vcf.c_str(),
-                part_size, sp_key, iv_temp, vcf_cipher, tag_temp);
+                1010000, sp_key, iv_temp, vcf_cipher, tag_temp);
 
             for(int i = 0; i < 16; i++)
             {
@@ -2891,6 +3021,7 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key,
 
             divided_vcf = "";
             part_size = 0;
+			is_poslist_updated = 0;
 
             divided_total++;
 
@@ -2916,6 +3047,7 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key,
             delete(iv_temp);
             delete(tag_temp);
             delete(vcf_cipher);
+
         }
     }
 
@@ -2923,8 +3055,19 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key,
 	/* encrypt remained vcf */
     uint8_t *iv_temp = new uint8_t[12]();
     uint8_t *tag_temp = new uint8_t[16]();
-    uint8_t *vcf_cipher = new uint8_t[30000000]();
+    uint8_t *vcf_cipher = new uint8_t[1500000]();
     int vcf_cipher_len = 0;
+
+	/* align divided_vcf's size to 20010000 byte */
+	size_t pad_sz = 1010000 - part_size;
+	
+	divided_vcf += "\n";
+
+	for(int i = 0; i < pad_sz - 1; i++)
+	{
+		divided_vcf += "#";
+	}
+
 
     iv_temp = generate_nonce(12);
 
@@ -2935,7 +3078,7 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key,
 
 
     vcf_cipher_len = encrypt_data_for_ISV((uint8_t*)divided_vcf.c_str(),
-        part_size, sp_key, iv_temp, vcf_cipher, tag_temp);
+        1010000, sp_key, iv_temp, vcf_cipher, tag_temp);
 	
 	uint8_t *plaintext = new uint8_t[divided_vcf.length() + 1]();
 
