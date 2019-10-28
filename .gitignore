@@ -36,3 +36,8 @@ CHROM/
 keys/
 encrypted_vcf/
 whitelist.txt
+sealed_keys/
+deo.cpp
+login.ini
+config.log
+config.status
