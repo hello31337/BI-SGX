@@ -101,6 +101,8 @@ static const sgx_ec256_public_t def_service_public_key = {
  * to deal with that.
  */
 
+
+
 sgx_status_t get_report(sgx_report_t *report, sgx_target_info_t *target_info)
 {
 #ifdef SGX_HW_SIM
@@ -215,6 +217,87 @@ sgx_status_t enclave_ra_close(sgx_ra_context_t ctx)
         ret = sgx_ra_close(ctx);
         return ret;
 }
+
+
+
+/*referred: https://ryozi.hatenadiary.jp/entry/20101203/1291380670 in 12/30/2018*/
+int trusted_base64_encoder(uint8_t *src, int srclen, uint8_t *dst, int dstlen)
+{
+	const char Base64char[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	int i,j;
+	int calclength = (srclen/3*4) + (srclen%3?4:0);
+	if(calclength > dstlen) return -1;
+	
+	j=0;
+	for(i=0; i+2<srclen; i+=3){
+		dst[j++] = Base64char[ (src[i] >> 2) & 0x3F ];
+		dst[j++] = Base64char[ (src[i] << 4 | src[i+1] >> 4) & 0x3F ];
+		dst[j++] = Base64char[ (src[i+1] << 2 | src[i+2] >> 6) & 0x3F ];
+		dst[j++] = Base64char[ (src[i+2]) & 0x3F ];
+	}
+	
+	if(i<srclen){
+		dst[j++] = Base64char[ (src[i] >> 2) & 0x3F ];
+		if(i+1<srclen){
+			dst[j++] = Base64char[ (src[i] << 4 | src[i+1] >> 4) & 0x3F ];
+			if(i+2<srclen){
+				dst[j++] = Base64char[ (src[i+1] << 2 | src[i+2] >> 6) & 0x3F ];
+			}else{
+				dst[j++] = Base64char[ (src[i+1] << 2) & 0x3F ];
+			}
+		}else{
+			dst[j++] = Base64char[ (src[i] << 4) & 0x3F ];
+		}
+	}
+	while(j%4) dst[j++] = '=';
+	
+	if(j<dstlen) dst[j] = '\0';
+	return j;
+}
+
+
+
+int trusted_base64_decoder(uint8_t *src, int srclen, uint8_t *dst, int dstlen)
+{
+	const unsigned char Base64num[] = {
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0x3E,0xFF,0xFF,0xFF,0x3F,
+		0x34,0x35,0x36,0x37,0x38,0x39,0x3A,0x3B,0x3C,0x3D,0xFF,0xFF,0xFF,0x00,0xFF,0xFF,
+		0xFF,0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x0C,0x0D,0x0E,
+		0x0F,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0x1A,0x1B,0x1C,0x1D,0x1E,0x1F,0x20,0x21,0x22,0x23,0x24,0x25,0x26,0x27,0x28,
+		0x29,0x2A,0x2B,0x2C,0x2D,0x2E,0x2F,0x30,0x31,0x32,0x33,0xFF,0xFF,0xFF,0xFF,0xFF,
+		
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+	};
+	int calclength = (srclen/4*3);
+	//cout << "\nINFO: calclength -> " << calclength << endl << endl;
+	int i,j;
+	if(calclength > dstlen || srclen % 4 != 0) return 0;
+	
+	j=0;
+	for(i=0; i+3<srclen; i+=4){
+		if((Base64num[src[i+0]]|Base64num[src[i+1]]|Base64num[src[i+2]]|Base64num[src[i+3]]) > 0x3F){
+			return -1;
+		}
+		dst[j++] = Base64num[src[i+0]]<<2 | Base64num[src[i+1]] >> 4;
+		dst[j++] = Base64num[src[i+1]]<<4 | Base64num[src[i+2]] >> 2;
+		dst[j++] = Base64num[src[i+2]]<<6 | Base64num[src[i+3]];
+	}
+	
+	if(j<dstlen) dst[j] = '\0';
+	return j;
+}
+
+
 
 size_t do_sealing(uint8_t *data_plain, uint8_t *sealed_data)
 {
@@ -817,8 +900,9 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 	uint8_t *vctx_cipher, size_t vctx_cipherlen, uint8_t *vctx_iv,
 	uint8_t *vctx_tag, uint8_t *iv_array, size_t ivlen, 
 	uint8_t *tag_array, size_t taglen, int *divnum_ret,
-	uint8_t *error_msg_cipher, size_t emsg_len, size_t *emsg_cipher_len,
-	uint8_t *emsg_iv, uint8_t *emsg_tag)
+	uint8_t *cpl_cipher, size_t cpl_deflen, uint8_t *iv_cpl,
+	uint8_t *tag_cpl, uint8_t *error_msg_cipher, size_t emsg_len, 
+	size_t *emsg_cipher_len, uint8_t *emsg_iv, uint8_t *emsg_tag)
 {
 	sgx_status_t status = SGX_SUCCESS;
 	sgx_ec_key_128bit_t sk_key;
@@ -1114,13 +1198,93 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 	}
 
 	
+	/* decrypt cipher of chunk-head position list */
+	uint8_t *chunk_pos_list = new uint8_t[cpl_deflen + 16]();
+
+
+	for(int i = 0; i < 16; i++)
+	{
+		tag_t[i] = tag_cpl[i];
+	}
+
+	for(int i = 0; i < p_iv_len; i++)
+	{
+		iv_t[i] = iv_cpl[i];
+	}
+
+
+	status = sgx_rijndael128GCM_decrypt(&sk_key, cpl_cipher,
+		cpl_deflen, chunk_pos_list, iv_t, p_iv_len, NULL, 0, &tag_t);
+
+
+
+	/* add prefix of chrom and nation to cpl */
+	std::string full_cpl_str;
+	std::string prefix;
+	char *cpl_token;
+	char *cpl_token_tail;
+
+	prefix = std::string((char*)chrom) + std::string("_")
+		+ std::string((char*)nation) + std::string("_");
+
+
+	cpl_token = strtok_r((char*)chunk_pos_list, "\n", &cpl_token_tail);
+
+	do
+	{
+		full_cpl_str += prefix;
+		full_cpl_str += std::string(cpl_token);
+		full_cpl_str += "\n";
+
+	} while(cpl_token = strtok_r(NULL, "\n", &cpl_token_tail));
+
+	full_cpl_str.pop_back();
+
+	size_t fcpl_sz = full_cpl_str.length();
+	uint8_t *full_cpl = new uint8_t[fcpl_sz + 1]();
+
+	for(int i = 0; i < fcpl_sz; i++)
+	{
+		full_cpl[i] = (uint8_t)full_cpl_str.c_str()[i];
+	}
+
+
+	
+	/* seal full cpl */
+	size_t sealed_cpl_size;
+	sealed_cpl_size = sgx_calc_sealed_data_size(0, fcpl_sz);
+	
+	uint8_t *sealed_cpl = new uint8_t[sealed_cpl_size]();
+
+	status = sgx_seal_data(0, NULL, fcpl_sz, full_cpl,
+		sealed_cpl_size, (sgx_sealed_data_t*)sealed_cpl);
+
+
+	if(status != SGX_SUCCESS)
+	{
+		emsg_str = "Failed to seal chunk-head position list.";
+		OCALL_print(emsg_str.c_str());
+		OCALL_print_status(status);
+
+		emsg_len = emsg_str.length() + 1;
+		error_msg = new uint8_t[emsg_len]();
+		
+		for(int i = 0; i < emsg_len - 1; i++)
+		{
+			error_msg[i] = (uint8_t)emsg_str.c_str()[i];
+		}
+
+		return status;
+	}
+
 	
 	/* call OCALL function to store into DB */
 	int ocall_status;
 
 	status = OCALL_store_vctx_into_db(&ocall_status, sealed_whitelist, 
-		sealed_data_size, chrm_hash, natn_hash, dstp_hash, tar_filename, 
-		usnm_hash, divnum, iv_copy, ivlen, tag_copy, taglen);
+		sealed_data_size, sealed_cpl, sealed_cpl_size, chrm_hash, 
+		natn_hash, dstp_hash, tar_filename, usnm_hash, divnum, 
+		iv_copy, ivlen, tag_copy, taglen);
 
 
 	if(status != SGX_SUCCESS)
@@ -1354,12 +1518,6 @@ sgx_status_t generate_oram_fileset(sgx_ra_context_t context,
 	}
 
 
-	OCALL_print("INFO: debug display:");
-	OCALL_dump(vctx_cipher, vctx_deflen);
-	OCALL_print(" ");
-	OCALL_dump(iv_t, 12);
-	OCALL_print(" ");
-	OCALL_dump(tag_vctx, 16);
 
 	status = sgx_rijndael128GCM_decrypt(&sk_key, vctx_cipher,
 		vctx_deflen, vcf_context, iv_t, p_iv_len, NULL, 0, &tag_t);
@@ -1442,7 +1600,7 @@ sgx_status_t generate_oram_fileset(sgx_ra_context_t context,
 		fileset_total = bit_scan;
 	}
 
-	int tdata_counter = 0;
+	int data_counter = 0;
 	char *pos_token;
 	char *pos_token_tail;
 	std::string context_list; //format ex.: "21_JPT_10000;1.bin"
@@ -1465,12 +1623,22 @@ sgx_status_t generate_oram_fileset(sgx_ra_context_t context,
 
 		for(int i = 0; i < rng_range; i++)
 		{
-			
+			if(i == obtained_rn)
+			{
+				chunk_context += std::to_string(data_counter);
+			}
+			else
+			{
+
+			}
+
+			data_counter++;
 		}
 	}
 	while (pos_token = strtok_r(NULL, "\n", &pos_token_tail));
 
 
+	/* process remaining dummies */
 
 	/* encrypt status message */
 	emsg_len = emsg_str.length() + 1;
@@ -1514,6 +1682,25 @@ sgx_status_t generate_oram_fileset(sgx_ra_context_t context,
 		emsg_tag[i] = tag_t[i];
 	}
 
+
+	return SGX_SUCCESS;
+}
+
+
+sgx_status_t oram_management(char *filename, size_t flnm_size, char *iv_array,
+	size_t iv_size, char *tag_array, size_t tag_size, char *pos_list,
+	size_t plst_size, size_t div_total)
+
+{
+	size_t iv_total_size = div_total * 12;
+	size_t tag_total_size = div_total * 16;
+
+	uint8_t *iv_total = new uint8_t[iv_total_size]();
+	uint8_t *tag_total = new uint8_t[tag_total_size]();
+
+	std::vector<std::string> filename_vec;
+	std::vector<std::string> pos_list_vec;
+	size_t total_files = 0;
 
 	return SGX_SUCCESS;
 }

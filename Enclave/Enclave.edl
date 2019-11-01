@@ -94,7 +94,9 @@ enclave {
 			[in, size=16]uint8_t *vctx_tag, 
 			[in, size=ivlen]uint8_t *iv_array, size_t ivlen, 
 			[in, size=taglen]uint8_t *tag_array, size_t taglen, 
-			[out]int *divnum_ret,
+			[out]int *divnum_ret, 
+			[in, size=cpl_deflen]uint8_t *cpl_cipher, size_t cpl_deflen,
+			[in, size=12]uint8_t *iv_cpl, [in, size=16]uint8_t *tag_cpl,
 			[out, size=emsg_len]uint8_t *error_msg_cipher, size_t emsg_len,
 			[out]size_t *emsg_cipher_len, [in, out, size=12]uint8_t *emsg_iv,
 			[in, out, size=16]uint8_t *emsg_tag);
@@ -111,6 +113,12 @@ enclave {
 			size_t emsg_len, [in, out]size_t *emsg_cipher_len, 
 			[in, out, size=12]uint8_t *emsg_iv, 
 			[in, out, size=16]uint8_t *emsg_tag, size_t slot_size);
+		
+		public sgx_status_t oram_management([in, size=flnm_size]char *filename,
+			size_t flnm_size, [in, size=iv_size]char *iv_array, size_t iv_size,
+			[in, size=tag_size]char *tag_array, size_t tag_size,
+			[in, size=plst_size]char *pos_list, size_t plst_size, 
+			size_t div_total);
 	};
 
 	untrusted {
@@ -156,10 +164,11 @@ enclave {
 			int clinvar_flag);
 		
 		int OCALL_store_vctx_into_db([in, size=wlst_size]uint8_t *whitelist,
-			size_t wlst_size, [in, size=32]uint8_t *chrm_hash,
-			[in, size=32]uint8_t *natn_hash, [in, size=32]uint8_t *dstp_hash,
-			[in, size=17]uint8_t *filename, [in, size=32]uint8_t *usnm_hash, 
-			int divnum, [in, size=ivlen]uint8_t *iv_array, size_t ivlen,
+			size_t wlst_size, [in, size=cpl_size]uint8_t *cpl, size_t cpl_size,
+			[in, size=32]uint8_t *chrm_hash, [in, size=32]uint8_t *natn_hash, 
+			[in, size=32]uint8_t *dstp_hash, [in, size=17]uint8_t *filename, 
+			[in, size=32]uint8_t *usnm_hash, int divnum, 
+			[in, size=ivlen]uint8_t *iv_array, size_t ivlen,
 			[in, size=taglen]uint8_t *tag_array, size_t taglen);
 
 		int OCALL_inquiryVCFContext([in, size=chrm_len]uint8_t *chrom, 

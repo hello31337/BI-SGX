@@ -50,6 +50,7 @@ using namespace std;
 #include <openssl/evp.h>
 #include <openssl/conf.h>
 #include <openssl/err.h>
+#include <openssl/sha.h>
 #include <getopt.h>
 #include <unistd.h>
 #endif
@@ -167,9 +168,12 @@ public:
 	string do_inquiryDB(); // for interpreter
 	int do_store_vctx(string whitelist, string chrom, string nation,
 		string disease_type, string filename, string username, 
-		int div_total, string iv_array, string tag_array);
+		int div_total, string iv_array, string tag_array, string cpl);
 	int do_inquiryVCTX(string chrom, string nation, string disease_type,
 		string *result);
+	int load_vctx_for_oram(string chrom, string nation, string &filename,
+		string &iv_array, string &tag_array, string &pos_list, 
+		size_t &div_total);
 	size_t get_divnum(string filename);
 	int get_IV_and_tag(uint8_t *iv_b64, uint8_t *tag_b64, string filename);
 
@@ -482,17 +486,18 @@ string BISGX_Database::do_inquiryDB()
 
 int BISGX_Database::do_store_vctx(string whitelist, string chrom,
 	string nation, string disease_type,	string filename, string username, 
-	int div_total, string iv_array, string tag_array)
+	int div_total, string iv_array, string tag_array, string cpl)
 {
 	table = "vcf_context_oram";
 
 	try
 	{
 		stmt->execute("INSERT INTO " + table + " (whitelist, chrom, nation, " 
-			+ "disease_type, tar_filename, username, div_total, iv_array, tag_array) "
+			+ "disease_type, tar_filename, username, div_total, iv_array, tag_array, pos_list) "
 			+ "VALUES('" + whitelist + "', '" + chrom + "', '" + nation + "', '"
 			+ disease_type + "', '" + filename + "', '" + username + "', '" 
-			+ to_string(div_total) + "', '" + iv_array + "', '" + tag_array + "')");
+			+ to_string(div_total) + "', '" + iv_array + "', '" + tag_array 
+			+ "', '" + cpl + "')");
 	}
 	catch(sql::SQLException &e)
 	{
@@ -573,6 +578,90 @@ int BISGX_Database::do_inquiryVCTX(string chrom, string nation, string disease_t
 		}
 
 		result->pop_back();
+	}
+	catch(sql::SQLException &e)
+	{
+		cerr << "# ERR: SQLException in " << __FILE__;
+		cerr <<" on line " << __LINE__ << endl;
+		cerr << "# ERR: " << e.what() << endl;
+		cerr << " (MySQL error code: " << e.getErrorCode();
+		cerr << ", SQLState: " << e.getSQLState() << ")" << endl;
+
+		return -1;
+	}
+
+	return 0;
+}
+
+
+int BISGX_Database::load_vctx_for_oram(string chrom, string nation, 
+	string &filename, string &iv_array, string &tag_array, 
+	string &pos_list, size_t &div_total)
+{
+	table = "vcf_context_oram";
+
+	string null_str = "";
+
+	for(int i = 0; i < 64; i++)
+	{
+		null_str += "0";
+	}
+
+	try
+	{
+		string cmd = "SELECT tar_filename, iv_array, tag_array, pos_list, div_total";
+		cmd += " FROM vcf_context_oram";
+		
+		if(chrom != null_str || nation != null_str)
+		{
+			cmd += " WHERE ";
+
+			if(chrom != null_str)
+			{
+				cmd += "chrom='";
+				cmd += chrom;
+				cmd += "'";
+
+				if(nation != null_str)
+				{
+					cmd += " AND ";
+				}
+			}
+
+			if(nation != null_str)
+			{
+				cmd += "nation='";
+				cmd += nation;
+				cmd += "'";
+			}
+		}
+
+		// cout << "\n" << cmd << endl << endl;
+
+		res = stmt->executeQuery(cmd);
+
+		while(res->next())
+		{
+			filename += res->getString("tar_filename");
+			filename += "\n";
+
+			iv_array += res->getString("iv_array");
+			iv_array += "\n";
+			
+			tag_array += res->getString("tag_array");
+			tag_array += "\n";
+
+			pos_list += res->getString("pos_list");
+			pos_list += "\n";
+
+			div_total += atoi(res->getString("div_total").c_str());
+		}
+
+		/* pop back extra newline */
+		filename.pop_back();
+		iv_array.pop_back();
+		tag_array.pop_back();
+		pos_list.pop_back();
 	}
 	catch(sql::SQLException &e)
 	{
@@ -929,18 +1018,21 @@ int OCALL_select_annotation(char *id, char *record,
 
 
 int OCALL_store_vctx_into_db(uint8_t *whitelist, size_t wlst_size,
-	uint8_t *chrm_hash, uint8_t *natn_hash, uint8_t *dstp_hash,  
-	uint8_t *filename, uint8_t *usnm_hash, int divnum, uint8_t *iv_array, 
-	size_t ivlen, uint8_t *tag_array, size_t taglen)
+	uint8_t *cpl, size_t cpl_size, uint8_t *chrm_hash, uint8_t *natn_hash, 
+	uint8_t *dstp_hash, uint8_t *filename, uint8_t *usnm_hash, int divnum, 
+	uint8_t *iv_array, size_t ivlen, uint8_t *tag_array, size_t taglen)
 {
 	uint8_t *chrm_hash_hex = new uint8_t[65]();
 	uint8_t *natn_hash_hex = new uint8_t[65]();
 	uint8_t *dstp_hash_hex = new uint8_t[65]();
 	uint8_t *usnm_hash_hex = new uint8_t[65]();
 	uint8_t *whitelist_b64 = new uint8_t[wlst_size * 2]();
+	uint8_t *cpl_b64 = new uint8_t[cpl_size * 2]();
 
 	int whitelist_b64len = base64_encrypt(whitelist, wlst_size,
 		whitelist_b64, wlst_size * 2);
+
+	int cpl_b64len = base64_encrypt(cpl, cpl_size, cpl_b64, cpl_size * 2);
 
 	for(int i = 0; i < 32; i++)
 	{
@@ -959,6 +1051,7 @@ int OCALL_store_vctx_into_db(uint8_t *whitelist, size_t wlst_size,
 	string usnm_str((char*)usnm_hash_hex);
 	string iv_array_str((char*)iv_array);
 	string tag_array_str((char*)tag_array);
+	string cpl_str((char*)cpl_b64);
 
 
 	/*
@@ -977,7 +1070,7 @@ int OCALL_store_vctx_into_db(uint8_t *whitelist, size_t wlst_size,
 	*/
 
 	int flag = bdb.do_store_vctx(wlst_str, chrm_str, natn_str, dstp_str,
-		flnm_str, usnm_str, divnum, iv_array_str, tag_array_str);
+		flnm_str, usnm_str, divnum, iv_array_str, tag_array_str, cpl_str);
 	
 	if(flag == 0)
 	{
@@ -1797,6 +1890,138 @@ int main (int argc, char *argv[])
 
 	bool isRAed = false;
 
+
+
+	/* ORAM management mode */
+	string oram_flag;
+
+	cout << "\nWould you like to enter ORAM management mode?" << endl;
+	cout << "0: yes, else: no" << endl;
+	cout << "> ";
+	cin >> oram_flag;
+
+	if(oram_flag == "0")
+	{
+		string chrom_oram, nation_oram;
+
+		cout << "Now enter ORAM management mode..." << endl;
+		cout << "Input chromosome number to filter: ";
+		cin >> chrom_oram;
+
+		cout << "\n\nInput nation to filter (delimiter must be \";\"): ";
+		cin >> nation_oram;
+
+		cout << endl << endl;
+
+
+		/* convert chrom to uint8_t array */
+		uint8_t *u_chrom = new uint8_t[chrom_oram.length() + 1]();
+
+		for(int i = 0; i < chrom_oram.length(); i++)
+		{
+			u_chrom[i] = chrom_oram.c_str()[i];
+		}
+
+
+		/* convert nation to uint8_t array */
+		uint8_t *u_nation = new uint8_t[nation_oram.length() + 1]();
+
+		for(int i = 0; i < nation_oram.length(); i++)
+		{
+			u_nation[i] = nation_oram.c_str()[i];
+		}
+
+		
+
+		/* obtain hash of chrom and nation */
+		uint8_t *chrom_hash = new uint8_t[SHA256_DIGEST_LENGTH]();
+		uint8_t *nation_hash = new uint8_t[SHA256_DIGEST_LENGTH]();
+
+		uint8_t *chrom_hash_hex = new uint8_t[SHA256_DIGEST_LENGTH * 2 + 1]();
+		uint8_t *nation_hash_hex = new uint8_t[SHA256_DIGEST_LENGTH * 2 + 1]();
+
+		SHA256(u_chrom, chrom_oram.length(), chrom_hash);
+		SHA256(u_nation, nation_oram.length(), nation_hash);
+
+		for(int i = 0; i < SHA256_DIGEST_LENGTH; i++)
+		{
+			sprintf((char*)&chrom_hash_hex[i*2], "%02x", chrom_hash[i]);
+			sprintf((char*)&nation_hash_hex[i*2], "%02x", nation_hash[i]);
+		}
+
+		string chash_hex_str((char*)chrom_hash_hex);
+		string nhash_hex_str((char*)nation_hash_hex);
+
+		
+		/* load vcf contexts for oram */
+		int bdb_ret = 0;
+		string filename, iv_array, tag_array, pos_list;
+		size_t div_total = 0;
+
+		bdb_ret = bdb.load_vctx_for_oram(chash_hex_str, nhash_hex_str,
+			filename, iv_array, tag_array, pos_list, div_total);
+		
+
+		/* convert string to char */
+		size_t flnm_size = filename.length();
+		size_t iv_size = iv_array.length();
+		size_t tag_size = tag_array.length();
+		size_t plst_size = pos_list.length();
+
+		char *filename_char = new char[flnm_size + 1]();
+		char *iv_array_char = new char[iv_size + 1]();
+		char *tag_array_char = new char[tag_size + 1]();
+		char *pos_list_char = new char[plst_size + 1]();
+
+		for(int i = 0; i < flnm_size; i++)
+		{
+			filename_char[i] = filename.c_str()[i];
+		}
+
+		for(int i = 0; i < iv_size; i++)
+		{
+			iv_array_char[i] = iv_array.c_str()[i];
+		}
+
+		for(int i = 0; i < tag_size; i++)
+		{
+			tag_array_char[i] = tag_array.c_str()[i];
+		}
+
+		for(int i = 0; i < plst_size; i++)
+		{
+			pos_list_char[i] = pos_list.c_str()[i];
+		}
+
+		
+		/* invoke ecall for oram management */
+		sgx_status_t ret_st;
+
+		sgx_status_t oram_status = oram_management(eid, &ret_st, filename_char,
+			flnm_size + 1, iv_array_char, iv_size + 1, tag_array_char, tag_size + 1,
+			pos_list_char, plst_size + 1, div_total);
+		
+		sgx_error_print(oram_status);
+
+		cout << "Finishing program..." << endl << endl;
+
+		delete(chrom_hash);
+		delete(nation_hash);
+		delete(chrom_hash_hex);
+		delete(nation_hash_hex);
+
+		sgx_destroy_enclave(eid);
+
+		return 0;
+	}
+	else
+	{
+		cout << "\nOk, starting remote attestation protocol..." << endl;
+	}
+
+
+
+
 	/* Are we attesting, or just spitting out a quote? */
 
 	while(msgio->server_loop())
@@ -2336,7 +2561,8 @@ int main (int argc, char *argv[])
 			vst = store_vcf_contexts(eid, &retval, g_ra_ctx, 
 				vctx_cipher, vctx_deflen, iv_vctx, tag_vctx, 
 				iv_array, iv_array_length + 1, tag_array, 
-				tag_array_length + 1, &divnum, error_msg, 256, 
+				tag_array_length + 1, &divnum, cpl_cipher,
+				cpl_deflen, iv_cpl, tag_cpl, error_msg, 256, 
 				&emsg_cipher_len, emsg_iv, emsg_tag);
 
 
@@ -2346,16 +2572,14 @@ int main (int argc, char *argv[])
 			 * the number of slot for single node of ORAM is defined as 4.
 			 */
 
-			
+			/*
 			vst = generate_oram_fileset(eid, &retval, g_ra_ctx,
 				tar_filename, divnum, cpl_cipher, cpl_deflen,
 				iv_cpl, tag_cpl, iv_array, iv_array_length + 1,
 				tag_array, tag_array_length + 1, vctx_cipher, 
 				vctx_deflen, iv_vctx, tag_vctx,	error_msg, 256,
 				&emsg_cipher_len, emsg_iv, emsg_tag, 4);
-			
-
-			cout << "Exited generate_oram_fileset successfully." << endl;
+			*/
 
 
 			/*
