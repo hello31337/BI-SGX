@@ -299,6 +299,13 @@ int trusted_base64_decoder(uint8_t *src, int srclen, uint8_t *dst, int dstlen)
 
 
 
+sgx_status_t trusted_nonce_generator(uint8_t *nonce, size_t sz)
+{
+	return sgx_read_rand(nonce, sizeof(uint8_t) * sz);
+}
+
+
+
 size_t do_sealing(uint8_t *data_plain, uint8_t *sealed_data)
 {
 	size_t sealed_data_size;
@@ -331,6 +338,7 @@ size_t do_sealing(uint8_t *data_plain, uint8_t *sealed_data)
 
 	return sealed_data_size;
 }
+
 
 void sealing_test(int mode)
 {
@@ -1635,7 +1643,7 @@ sgx_status_t generate_oram_fileset(sgx_ra_context_t context,
 			data_counter++;
 		}
 	}
-	while (pos_token = strtok_r(NULL, "\n", &pos_token_tail));
+	while ((pos_token = strtok_r(NULL, "\n", &pos_token_tail)) != NULL);
 
 
 	/* process remaining dummies */
@@ -1692,6 +1700,12 @@ sgx_status_t oram_management(char *filename, size_t flnm_size, char *iv_array,
 	size_t plst_size, size_t div_total)
 
 {
+	if(div_total < 1)
+	{
+		OCALL_print("Error: Invalid dataset.");
+		return SGX_ERROR_INVALID_PARAMETER;
+	}
+
 	size_t iv_total_size = div_total * 12;
 	size_t tag_total_size = div_total * 16;
 
@@ -1700,7 +1714,271 @@ sgx_status_t oram_management(char *filename, size_t flnm_size, char *iv_array,
 
 	std::vector<std::string> filename_vec;
 	std::vector<std::string> pos_list_vec;
+	std::vector<size_t> divnum_vec;
 	size_t total_files = 0;
+
+	/* parse filenames */
+	char *token_head;
+	char *token_tail;
+
+	token_head = strtok_r(filename, "\n", &token_tail);
+
+	do
+	{
+		filename_vec.push_back(std::string(token_head));
+		total_files++;
+
+	} while((token_head = strtok_r(NULL, "\n", &token_tail)) != NULL);
+
+	
+	if(total_files < 1)
+	{
+		return SGX_ERROR_UNEXPECTED;
+	}
+
+
+	/* parse other contexts */
+	int iv_index = 0;
+	int tag_index = 0;
+
+	for(int idx = 0; idx < total_files; idx++)
+	{
+		/* process iv array */
+		uint8_t *decoded_iv = new uint8_t[iv_size]();
+
+		size_t ret_sz = trusted_base64_decoder((uint8_t*)iv_array, iv_size,
+			decoded_iv, iv_size);
+
+		for(int i = 0; i < ret_sz; i++)
+		{
+			iv_total[iv_index + i] = decoded_iv[i];
+		}
+
+		iv_index += ret_sz;
+		divnum_vec.emplace_back(ret_sz / 12);
+
+		delete(decoded_iv);
+
+
+		/* process tag array */
+		uint8_t *decoded_tag = new uint8_t[tag_size]();
+
+		ret_sz = trusted_base64_decoder((uint8_t*)tag_array, tag_size,
+		decoded_tag, tag_size);
+
+		for(int i = 0; i < ret_sz; i++)
+		{
+			tag_total[tag_index + i] = decoded_tag[i];
+		}
+
+		tag_index += ret_sz;
+
+		delete(decoded_tag);
+
+
+		/* decode position list from base64 */
+		uint8_t *sealed_pos_list = new uint8_t[plst_size]();
+
+		ret_sz = trusted_base64_decoder((uint8_t*)pos_list, plst_size,
+			sealed_pos_list, plst_size);
+
+		
+		/* unseal position list */
+		uint8_t *unsealed_plst = new uint8_t[ret_sz + 1]();
+
+		sgx_status_t status = sgx_unseal_data((sgx_sealed_data_t*)sealed_pos_list, 
+			NULL, 0, unsealed_plst, (uint32_t*)&ret_sz);
+
+		if(status != SGX_SUCCESS)
+		{
+			return status;
+		}
+
+		
+		/* parse unsealed positions to vector */
+		char *plst_token;
+		char *plst_token_tail;
+
+		plst_token = strtok_r((char*)unsealed_plst, "\n", &plst_token_tail);
+
+		do
+		{
+			pos_list_vec.push_back(std::string(plst_token));
+		} while((plst_token = strtok_r(NULL, "\n", &plst_token_tail)) != NULL);
+		
+
+		delete(sealed_pos_list);
+		delete(unsealed_plst);
+	}
+
+
+
+	/* load sealed AES keys */
+	uint8_t *key_array = new uint8_t[16 * total_files]();
+	
+	for(int idx = 0; idx < total_files; idx++)
+	{
+		size_t sealed_key_size = sgx_calc_sealed_data_size(0, 16);
+		uint8_t *sealed_key = new uint8_t[sealed_key_size]();
+		char *flnm_to_pass = new char[17]();
+		
+
+		for(int i = 0; i < 16; i++)
+		{
+			flnm_to_pass[i] = filename_vec[idx].c_str()[i];
+		}
+
+		sgx_status_t status;
+		int ocall_ret = 0;
+		size_t dummy_sz = 0;
+
+		status = OCALL_get_key_and_vctx(&ocall_ret, sealed_key,
+			sealed_key_size, &dummy_sz, flnm_to_pass);
+
+		if(status != SGX_SUCCESS)
+		{
+			return status;
+		}
+
+		if(ocall_ret == -1)
+		{
+			OCALL_print("\nError has occurred while querying MySQL.\n");
+			return SGX_ERROR_UNEXPECTED;
+		}
+		else if(ocall_ret == -2)
+		{
+			OCALL_print("\nEncryption key was not found for stored VCF.\n");
+			return SGX_ERROR_UNEXPECTED;
+		}
+
+
+		/* unseal key */
+		uint32_t key_len; //must be 16
+
+		key_len = sgx_get_encrypt_txt_len((sgx_sealed_data_t*)sealed_key);
+
+		if(key_len != 16)
+		{
+			OCALL_print("Error: Corrupted key length.");
+			return SGX_ERROR_UNEXPECTED;
+		}
+
+		uint8_t *vcf_key = new uint8_t[key_len]();
+
+		status = sgx_unseal_data((sgx_sealed_data_t*)sealed_key, NULL, 0,
+			vcf_key, &key_len);
+
+		if(status != SGX_SUCCESS)
+		{
+			OCALL_print("Error: Failed to unseal key.");
+			return status;
+		}
+
+		for(int i = 0; i < 16; i++)
+		{
+			key_array[idx * 16 + i] = vcf_key[i];
+		}
+	}
+
+
+	/* generate new common AES key */
+	uint8_t *common_key = new uint8_t[16]();
+	sgx_status_t rnd_st = trusted_nonce_generator(common_key, 16);
+
+
+	/* NOTE: THIS VARIABLE MUST BE FIXED TO ACTUAL VALUE */
+	std::string target_name = filename_vec[0];
+	target_name += ".10";
+
+
+	/* split target filename to body and suffix */
+	char *tgn_char = (char*)target_name.c_str();
+	char *tgn_token;
+	char *tgn_token_tail;
+
+	std::string tgn_body, tgn_suffix;
+
+	tgn_token = strtok_r(tgn_char, ".", &tgn_token_tail);
+	tgn_body = std::string(tgn_token);
+
+	tgn_token = strtok_r(NULL, ".", &tgn_token_tail);
+	tgn_suffix = std::string(tgn_token);
+
+
+	int body_num = 0;
+	int is_found = 0;
+	int suffix_int = atoi(tgn_suffix.c_str());
+
+	for(body_num = 0; body_num < total_files; body_num++)
+	{
+		if(tgn_body == filename_vec[body_num])
+		{
+			is_found++;
+			break;
+		}
+	}
+
+	if(is_found < 1)
+	{
+		OCALL_print("Error: Invalid filename is queried.");
+		return SGX_ERROR_UNEXPECTED;
+	}
+
+
+	/* extract cryptographic contexts */
+	uint8_t *target_iv = new uint8_t[12]();
+	uint8_t *target_tag = new uint8_t[16]();
+	uint8_t *target_key = new uint8_t[16]();
+
+	size_t offset_base = 0;
+	size_t iv_offset = 0;
+	size_t tag_offset = 0;
+
+	for(int i = 0; i < body_num; i++)
+	{
+		offset_base += divnum_vec[i];
+	}
+
+	iv_offset = offset_base * 12 + suffix_int * 12;
+	tag_offset = offset_base * 16 + suffix_int * 16;
+
+	for(int i = 0; i < 12; i++)
+	{
+		target_iv[i] = iv_total[iv_offset + i];
+	}
+
+	for(int i = 0; i < 16; i++)
+	{
+		target_tag[i] = tag_total[tag_offset + i];
+		target_key[i] = key_array[body_num * 16 + i];
+	}
+
+
+	/* load target chunk */
+	sgx_status_t cl_st = SGX_SUCCESS;
+	int ocall_ret = 0;
+	size_t chunk_size = 1010000;
+	uint8_t *loaded_chunk = new uint8_t[chunk_size]();
+
+	char *flnm_to_pass = new char[17]();
+
+	for(int i = 0; i < 16; i++)
+	{
+		flnm_to_pass[i] = tgn_body.c_str()[i];
+	}
+
+	cl_st = OCALL_load_VCF_chunk(&ocall_ret, loaded_chunk, chunk_size,
+		0, flnm_to_pass, 17, suffix_int);
+
+	if(cl_st != SGX_SUCCESS)
+	{
+		OCALL_print("Error: Failed to load designated VCF chunk.");
+		return cl_st;
+	}
+
+
+	/* decrypt loaded chunk */
+
 
 	return SGX_SUCCESS;
 }
