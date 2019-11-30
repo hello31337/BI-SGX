@@ -172,6 +172,8 @@ public:
 		string *result);
 	size_t get_divnum(string filename);
 	int get_IV_and_tag(uint8_t *iv_b64, uint8_t *tag_b64, string filename);
+	int inquiryStoredData(string &inquiried_str);
+	int get_data_for_download(string misc_info, uint8_t *&sealed_b64);
 
 	/*
 	should be added is:
@@ -663,6 +665,98 @@ int BISGX_Database::get_IV_and_tag(uint8_t *iv_b64, uint8_t *tag_b64, string fil
 
 	return 0;
 }
+
+
+
+int BISGX_Database::inquiryStoredData(string &inquiried_str)
+{
+	try
+	{
+		vector<string> datatype_vec;
+
+		datatype_vec.emplace_back("integer");
+		datatype_vec.emplace_back("genome");
+		datatype_vec.emplace_back("FASTA");
+		size_t dtvec_sz = datatype_vec.size();
+
+
+		for(int i = 0; i < dtvec_sz; i++)
+		{
+			string query = "SELECT dataname FROM stored_data WHERE owner='";
+
+			query += username_internal;
+			query += "' AND datatype='";
+			query += datatype_vec[i];
+			query += "'";
+
+			inquiried_str += datatype_vec[i];
+			inquiried_str += "->\n";
+
+			res = stmt->executeQuery(query);
+
+			while(res->next())
+			{
+				inquiried_str += res->getString("dataname");
+				inquiried_str += "\n";
+			}
+
+			inquiried_str += "\n";
+		}
+
+		inquiried_str.pop_back();
+	}
+	catch(sql::SQLException &e)
+	{
+		cerr << "# ERR: SQLException in " << __FILE__;
+		cerr <<" on line " << __LINE__ << endl;
+		cerr << "# ERR: " << e.what() << endl;
+		cerr << " (MySQL error code: " << e.getErrorCode();
+		cerr << ", SQLState: " << e.getSQLState() << ")" << endl;
+		
+		return -1;
+	}
+
+	return 0;
+}
+
+
+int BISGX_Database::get_data_for_download(string misc_info, uint8_t *&sealed_b64)
+{
+	try
+	{
+		string cmd = "SELECT data FROM stored_data WHERE dataname='";
+		cmd += misc_info;
+		cmd += "'";
+
+		res = stmt->executeQuery(cmd);
+
+		/* candidate must be only one data */
+		res->next();
+
+		string data_body = res->getString("data");
+		size_t data_sz = data_body.length();
+
+		sealed_b64 = new uint8_t[data_sz + 1]();
+
+		for(int i = 0; i < data_sz; i++)
+		{
+			sealed_b64[i] = data_body.c_str()[i];
+		}
+
+		return 0;
+	}
+	catch(sql::SQLException &e)
+	{
+		cerr << "# ERR: SQLException in " << __FILE__;
+		cerr <<" on line " << __LINE__ << endl;
+		cerr << "# ERR: " << e.what() << endl;
+		cerr << " (MySQL error code: " << e.getErrorCode();
+		cerr << ", SQLState: " << e.getSQLState() << ")" << endl;
+		
+		return -1;
+	}
+}
+
 
 
 void OCALL_print(const char* message)
@@ -1243,8 +1337,10 @@ int OCALL_load_VCF_chunk(uint8_t *vcf_chunk, uint64_t chunk_size, uint64_t offse
 }
 
 
+
 int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb, 
-	string *datatype_str)
+	string *datatype_str, string *misc_info_str, uint8_t *&login_info, 
+	uint8_t *login_iv, uint8_t *login_tag, size_t &login_sz)
 {
 	int rv;
 	size_t sz;
@@ -1385,6 +1481,7 @@ int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb,
 	for(int i = 0; i < 12; i++)
 	{
 		iv_to_enclave[i] = iv_tmp[i];
+		login_iv[i] = iv_tmp[i];
 	}
 
 
@@ -1401,6 +1498,7 @@ int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb,
 	for(int i = 0; i < 16; i++)
 	{
 		tag_to_enclave[i] = tag_tmp[i];
+		login_tag[i] = tag_tmp[i];
 	}
 
 	cout << "Execute ECALL with passing cipher data." << endl;
@@ -1412,15 +1510,24 @@ int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb,
 	uint8_t username[32] = {'\0'};
 	uint8_t password_hash[33] = {'\0'};
 	uint8_t privilege[2] = {'\0'};
-	uint8_t datatype[8] = {'\0'};
+	uint8_t datatype[32] = {'\0'};
+	uint8_t misc_info[128] = {'\0'};
 
 	cout << "Check cipher_to_enclave before pass: " << endl;
 	OCALL_dump(cipher_to_enclave, cipherlen);
 
+	login_info = new uint8_t[deflen]();
+	login_sz = deflen;
+
+	for(int i = 0; i < deflen; i++)
+	{
+		login_info[i] = cipher_to_enclave[i];
+	}
+
 	sgx_status_t login_status = process_login_info(eid, &retval, g_ra_ctx, 
 		cipher_to_enclave, (size_t)deflen, iv_to_enclave, tag_to_enclave, 
 		result_cipher, &result_len, username, password_hash, privilege,
-		datatype);
+		datatype, misc_info);
 
 	uint8_t phash_hex[65] = {'\0'};
 
@@ -1436,6 +1543,7 @@ int receive_login_info(MsgIO *msgio, sgx_enclave_id_t eid, BISGX_Database *bdb,
 	string dtstr_tmp(reinterpret_cast<char*>(datatype));
 
 	*datatype_str = dtstr_tmp;
+	*misc_info_str = std::string((char*)misc_info);
 
 	bdb->setUsername(username_str);
 
@@ -1808,12 +1916,170 @@ int main (int argc, char *argv[])
 	
 
 		string datatype = "";
+		string misc_info = "";
+
+		uint8_t *login_iv = new uint8_t[12]();
+		uint8_t *login_tag = new uint8_t[16]();
+		uint8_t *login_info;
+		size_t login_sz = 0;
 
 		cout << "RA completed. Receive login info from SP..." << endl;
-		int login_flag = receive_login_info(msgio, eid, &bdb, &datatype);
+		int login_flag = receive_login_info(msgio, eid, &bdb, &datatype, &misc_info,
+			login_info, login_iv, login_tag, login_sz);
+
 		cout << "Receive secret data from SP... " << endl;
+
+
+		if(datatype == "inquiry")
+		{
+			string inquiried_str = "";
+
+			int iq_ret = bdb.inquiryStoredData(inquiried_str);
+			size_t result_len  = inquiried_str.length();
 		
-		if(datatype == "vcf")
+			uint8_t *result_plain = new uint8_t[result_len + 1]();
+			uint8_t *result_cipher = new uint8_t[result_len + 1]();
+			uint8_t *iv_to_enclave = new uint8_t[12]();
+			uint8_t *tag_to_enclave = new uint8_t[16]();
+
+			for(int i = 0; i < result_len; i++)
+			{
+				result_plain[i] = inquiried_str.c_str()[i];
+			}
+
+			sgx_status_t pass_st = SGX_SUCCESS;
+			sgx_status_t enc_st = encrypt_for_TLS(eid, &pass_st, g_ra_ctx,
+				result_plain, result_len, result_cipher, iv_to_enclave, 
+				tag_to_enclave);
+			
+			/*Convert result contexts to base64 format*/
+			uint8_t *res_cipherb64 = new uint8_t[result_len * 2];
+			uint8_t res_ivb64[64] = {'\0'};
+			uint8_t res_tagb64[64] = {'\0'};
+			uint8_t res_deflenb64[128] = {'\0'};
+			int res_cipherb64_len, res_ivb64_len, res_tagb64_len, res_deflenb64_len;
+
+			/*Encode result cipher*/
+			res_cipherb64_len = base64_encrypt(result_cipher, result_len,
+						res_cipherb64, result_len * 2);
+
+			/*Encode result IV*/
+			res_ivb64_len = base64_encrypt(iv_to_enclave, 12, res_ivb64, 64);
+
+			/*Encode result MAC tag*/
+			res_tagb64_len = base64_encrypt(tag_to_enclave, 16, res_tagb64, 64);
+
+			/*Encode result cipher's length*/
+			uint8_t *resdeflentmp = 
+				const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(to_string(result_len).c_str()));
+
+			res_deflenb64_len = 
+				base64_encrypt(resdeflentmp, strlen((char*)resdeflentmp), res_deflenb64, 128);
+
+
+			/*Base64 value check*/
+			cout << "========================================================================" << endl;
+			cout << "result cipher in base64: " << endl;
+			cout << res_cipherb64 << endl;
+			cout << "========================================================================" << endl;
+			cout << "result IV in base64: " << endl;
+			cout << res_ivb64 << endl;
+			cout << "========================================================================" << endl;
+			cout << "result tag in base64: " << endl;
+			cout << res_tagb64 << endl;
+			cout << "========================================================================" << endl;
+			cout << "result cipher's length in base64" << endl;
+			cout << res_deflenb64 << endl;
+			cout << "========================================================================" << endl;
+			cout << endl;
+
+			/*send base64-ed result cipher to SP*/
+			cout << "========================================================================" << endl;
+			cout << "Send encrypted result to SP." << endl;
+			
+			cout << "Encrypted result to be sent is: " << endl;
+			msgio->send(res_cipherb64, strlen((char*)res_cipherb64));
+
+			cout << "Complete sending message." << endl;
+			cout << "Please wait for 0.25 sec." << endl;
+			cout << "========================================================================" << endl;
+
+			usleep(250000);
+
+			/*send base64-ed IV to SP*/
+			cout << "IV to be sent is: " << endl;
+			msgio->send(res_ivb64, strlen((char*)res_ivb64));
+
+			cout << "Complete sending message." << endl;
+			cout << "Please wait for 0.25 sec." << endl;
+			cout << "========================================================================" << endl;
+			
+			usleep(250000);
+
+			/*send base64-ed MAC tag to SP*/
+			cout << "Tag to be sent is: " << endl;
+			msgio->send(res_tagb64, strlen((char*)res_tagb64));
+
+			cout << "Complete sending message." << endl;
+			cout << "Please wait for 0.25 sec." << endl;
+			cout << "========================================================================" << endl;
+
+			usleep(250000);
+
+			/*send base64-ed result cipher length to SP*/
+			cout << "Result cipher's length to be sent is: " << endl;
+			msgio->send(res_deflenb64, strlen((char*)res_deflenb64));
+
+			cout << "Complete sending message." << endl;
+			cout << "Please wait for 0.25 sec." << endl;
+			cout << "========================================================================" << endl;
+			
+			cout << "Complete sending result contexts to SP." << endl << endl;
+		}
+		else if(datatype == "download")
+		{
+			/* retrieve sealed data from DB */
+			uint8_t *sealed_b64; // will be newed at bdb member function
+			int ret_status = 0;
+
+			ret_status = bdb.get_data_for_download(misc_info, sealed_b64);
+			
+
+			/* must implement judging feature for the return value here */
+
+			
+
+			/* decode sealed data from base64 */
+			size_t sealed_b64_sz = strlen((char*)sealed_b64);
+			size_t sealed_sz = 0;
+			uint8_t *sealed_binary = new uint8_t[sealed_b64_sz + 1]();
+			
+
+			sealed_sz = base64_decrypt(sealed_b64, sealed_b64_sz, 
+				sealed_binary, sealed_b64_sz);
+
+
+			uint8_t *dl_data = new uint8_t[sealed_sz]();
+			uint8_t *dl_iv = new uint8_t[12]();
+			uint8_t *dl_tag = new uint8_t[16]();
+			size_t dl_sz = 0;
+			sgx_status_t status = SGX_SUCCESS;
+			sgx_status_t retval = SGX_SUCCESS;
+
+
+			status = process_data_for_dl(eid, &retval, g_ra_ctx, login_info, login_sz,
+				login_iv, login_tag, sealed_binary, sealed_sz, dl_data, 
+				dl_iv, dl_tag, &dl_sz);
+
+
+			/* unseal and re-encrypt for TLS transfer */
+			/*
+			 * you must pass the cipher of login info and its contexts 
+			 * to verify the integrity of user information.
+			 */
+
+		}
+		else if(datatype == "vcf")
 		{
 			int rv;
 			size_t sz;

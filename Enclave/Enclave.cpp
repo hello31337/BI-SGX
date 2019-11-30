@@ -322,7 +322,8 @@ void unsealing_test(uint8_t *sealed_data)
 
 sgx_status_t process_login_info(sgx_ra_context_t context, uint8_t* login_info_cipher,
 	size_t cipherlen, uint8_t* p_iv, uint8_t* tag, uint8_t *res_cipher, size_t *res_len,
-	uint8_t *username, uint8_t *password_hash, uint8_t *privilege, uint8_t *datatype)
+	uint8_t *username, uint8_t *password_hash, uint8_t *privilege, uint8_t *datatype,
+	uint8_t *misc_info)
 {
 	sgx_status_t status = SGX_SUCCESS;
 	sgx_ec_key_128bit_t sk_key, mk_key;
@@ -339,7 +340,7 @@ sgx_status_t process_login_info(sgx_ra_context_t context, uint8_t* login_info_ci
 	}
 	
 	uint32_t p_iv_len = 12;
-	uint8_t login_info[64] = {'\0'};
+	uint8_t login_info[128] = {'\0'};
 	
 	sgx_aes_gcm_128bit_tag_t tag_t;
 	uint8_t *iv_t = new uint8_t[p_iv_len];
@@ -367,9 +368,66 @@ sgx_status_t process_login_info(sgx_ra_context_t context, uint8_t* login_info_ci
 		return status;
 	}
 
+
 	uint8_t password[32] = {'\0'};
 	int read_count = 0, pass_rc = 0, type_rc = 0;
 
+	/* username */
+	char *token_head = strtok((char*)login_info, "\n");
+	size_t token_sz = strlen(token_head);
+
+	for(int i = 0; i < token_sz; i++)
+	{
+		username[i] = token_head[i];
+	}
+
+	/* password */
+	token_head = strtok(NULL, "\n");
+	token_sz = strlen(token_head);
+
+	for(int i = 0; i < token_sz; i++)
+	{
+		password[i] = token_head[i];
+	}
+
+	/* privilege */
+	token_head = strtok(NULL, "\n");
+	token_sz = strlen(token_head);
+
+	privilege[0] = token_head[0];
+
+	
+
+	if(privilege[0] == 'O')
+	{
+		/* datatype */
+		token_head = strtok(NULL, "\n");
+		token_sz = strlen(token_head);
+
+		for(int i = 0; i < token_sz; i++)
+		{
+			datatype[i] = token_head[i];
+		}
+
+		std::string dtp_str = std::string((char*)datatype);
+
+		if(dtp_str == "download")
+		{
+			token_head = strtok(NULL, "\n");
+			token_sz = strlen(token_head);
+
+			OCALL_print_int(strlen(token_head));
+
+			for(int i = 0; i < token_sz; i++)
+			{
+				misc_info[i] = token_head[i];
+			}
+
+		}
+	}
+
+
+	/*
 	while(1)
 	{
 		if(login_info[read_count] == '\n')
@@ -413,6 +471,7 @@ sgx_status_t process_login_info(sgx_ra_context_t context, uint8_t* login_info_ci
 			type_rc++;
 		}
 	}
+	*/
 
 	sgx_status_t hashst = 
 		sgx_sha256_msg(password, strlen((char*)password), 
@@ -1266,5 +1325,145 @@ sgx_status_t store_vcf_contexts(sgx_ra_context_t context,
 	delete(vcf_context);
 	delete(iv_t);
 
+	return SGX_SUCCESS;
+}
+
+
+sgx_status_t encrypt_for_TLS(sgx_ra_context_t context, uint8_t *plain,
+	size_t plain_len, uint8_t *cipher, uint8_t *iv, uint8_t *tag)
+{
+	uint8_t *iv_t = new uint8_t[12]();
+	sgx_aes_gcm_128bit_tag_t tag_t;
+	sgx_status_t status = SGX_SUCCESS;
+	sgx_ec_key_128bit_t sk_key;
+	
+	status = sgx_ra_get_keys(context, SGX_RA_KEY_SK, &sk_key);
+
+	OCALL_generate_nonce(iv_t, 12);
+
+	status = sgx_rijndael128GCM_encrypt(&sk_key, plain, plain_len,
+		cipher, iv_t, 12, NULL, 0, &tag_t);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print("Error while encrypting secret.");
+		OCALL_print_status(status);
+		return status;
+	}
+
+	for(int i = 0; i < 16; i++)
+	{
+		tag[i] = tag_t[i];
+	}
+
+	for(int i = 0; i < 12; i++)
+	{
+		iv[i] = iv_t[i];
+	}
+
+	delete iv_t;
+
+	return status;
+}
+
+
+
+sgx_status_t process_data_for_dl(sgx_ra_context_t context, uint8_t *login_info,
+	size_t login_sz, uint8_t *login_iv, uint8_t *login_tag, uint8_t *sealed_binary,
+	size_t sealed_sz, uint8_t *dl_data, uint8_t *dl_iv, uint8_t *dl_tag, 
+	size_t *dl_sz)
+{
+	uint8_t *iv_t = new uint8_t[12]();
+	sgx_aes_gcm_128bit_tag_t tag_t;
+	sgx_ec_key_128bit_t sk_key;
+	sgx_status_t status = SGX_SUCCESS;
+
+	status = sgx_ra_get_keys(context, SGX_RA_KEY_SK, &sk_key);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print("Failed to obtain session key.");
+		OCALL_print_status(status);
+
+		return status;
+	}
+
+
+	for(int i = 0; i < 12; i++)
+	{
+		iv_t[i] = login_iv[i];
+	}
+
+	for(int i = 0; i < 16; i++)
+	{
+		tag_t[i] = login_tag[i];
+	}
+
+
+	uint8_t *login_plain = new uint8_t[login_sz + 1]();
+
+	
+	/* decrypt login contexts */
+	status = sgx_rijndael128GCM_decrypt(&sk_key, login_info,
+		login_sz, login_plain, iv_t, 12, NULL, 0, &tag_t);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print("Failed to decrypt login information.");
+		OCALL_print_status(status);
+
+		return status;
+	}
+
+
+	/* extract username from decrypted login contexts */
+	char *username = strtok((char*)login_plain, "\n");
+	std::string usnm_str(username);
+
+	/* unseal data for download */
+	uint32_t dl_plain_len;
+	uint8_t *dl_plain;
+
+	dl_plain_len = sgx_get_encrypt_txt_len((sgx_sealed_data_t*)sealed_binary);
+
+
+	dl_plain = new uint8_t[dl_plain_len + 1]();
+
+	status = sgx_unseal_data((sgx_sealed_data_t*)sealed_binary, NULL, 0, 
+		dl_plain, &dl_plain_len);
+
+	if(status != SGX_SUCCESS)
+	{
+		OCALL_print("Failed to unseal data for download");
+		OCALL_print_status(status);
+
+		return status;
+	}
+
+
+	/* check username and need to discard first line */
+	char *header = strtok((char*)dl_plain, "\n");
+	std::string header_str(header);
+
+
+	if(header_str != usnm_str)
+	{
+		OCALL_print("Fatal: Your user information is corrupted.");
+
+		return (sgx_status_t)0x5002; //SGX_ERROR_NO_PRIVILEDGE
+	}
+
+	size_t header_sz = header_str.length() + 1;
+	uint8_t *dl_cut = new uint8_t[dl_plain_len + 1 - header_sz]();
+
+	for(int i = header_sz; i < dl_plain_len; i++)
+	{
+		dl_cut[i - header_sz] = dl_plain[i];
+	}
+
+	OCALL_print((char*)dl_cut);
+
+
+	
 	return SGX_SUCCESS;
 }

@@ -2644,6 +2644,146 @@ double VCFParser_LR(uint8_t *plain_vcf, std::vector<std::vector<char>> &snp_vec,
 }
 
 
+double VCFParser_PCA(uint8_t *plain_vcf, std::vector<std::vector<double>> &snp_vec,
+	std::string chrom, std::vector<uint64_t> &pos_query, int &query_index, 
+	int matched_flag)
+{
+	/*
+	 * 1. convert query to array of uint64_t
+	 * 2. sort the array
+	 * 3. compare with actual position and skip query if need
+	*/
+
+	int is_valid_pos = 0;
+	char *tail_line_tk;
+	char *line_token = strtok_r((char*)plain_vcf, "\n", &tail_line_tk);
+
+
+	do
+	{
+		if(matched_flag == 0) continue;
+		if(line_token[0] == '#') continue;
+
+
+		/* start parsing vcf line */
+		char *tail_column_tk;
+		char *column_token = strtok_r(line_token, "\t", &tail_column_tk);
+
+		/* compare chromosome number */
+		if(chrom != "")
+		{
+			if(column_token != chrom) continue;
+		}
+
+
+		/* compare position */
+		column_token = strtok_r(NULL, "\t", &tail_column_tk);
+		
+		size_t query_size = pos_query.size();
+		int pos_clear_flag = 0;
+		int cur_pos = 0;
+		uint64_t tokened_pos = strtoul(column_token, NULL, 10);
+		
+
+
+		if(query_index >= query_size) continue;
+
+		while((pos_query[query_index] < tokened_pos) 
+			&& (query_index < query_size))
+		{
+			query_index++;
+		}
+
+		if(pos_query[query_index] != tokened_pos)
+		{
+			continue;
+		}
+	
+
+
+		/* discard refID, SNP info, QUAL, FILTER, INFO, FORMAT */
+		for(int i = 0; i < 7; i++)
+		{
+			column_token = strtok_r(NULL, "\t", &tail_column_tk);
+		}
+
+
+		/* start parsing allele data */
+		/* WARNING: haploid is currently NOT SUPPORTED */
+		while((column_token = strtok_r(NULL, "\t", &tail_column_tk)) != NULL)
+		{
+			/* truncate extra formats */
+			char *pair_token;
+			char *tail_pair_tk;
+
+			pair_token = strtok_r(column_token, ";", &tail_pair_tk);
+
+			std::string allele1 = "";
+			std::string allele2 = "";
+			int token_index = 0;
+			
+			size_t pair_tk_size = strlen(pair_token);
+
+			/* obtain allele1 */
+			if(pair_token[token_index] == '.')
+			{
+				token_index += 2;
+			}
+			else
+			{
+				while(pair_token[token_index] != '|' && pair_token[token_index] != '/')
+				{
+					allele1 += pair_token[token_index];
+					token_index++;
+				}
+
+				token_index++;
+			}
+			
+			/* obtain allele2 */
+			if(pair_token[token_index] != '.')
+			{
+				while(token_index < pair_tk_size)
+				{
+					allele2 += pair_token[token_index];
+					token_index++;
+				}
+			}
+
+
+
+			if(allele1 == "0" && allele2 == "0")
+			{
+				snp_vec[query_index].emplace_back(0.0);
+			}
+			else if((allele1 == "0" || allele2 == "0") 
+					&& (allele1 != "." && allele2 != "."))
+			{
+				snp_vec[query_index].emplace_back(1.0);
+			}
+			else if((allele1 != "0" && allele2 != "0")
+					&& (allele1 != "." && allele2 != "."))
+			{
+				snp_vec[query_index].emplace_back(2.0);
+			}
+			else
+			{
+				/* 
+				 * if obtained allele data is invalid, distinguishing it is
+				 * STRONGLY RECOMMENDED, but temporary just put 0 fot the present.
+				 */
+
+				snp_vec[query_index].emplace_back(0.0);
+			}
+		}
+		query_index++;
+	}
+	while ((line_token = strtok_r(NULL, "\n", &tail_line_tk)) != NULL);
+
+	return 0.0;
+}
+
+
 void LogisticRegression(double *theta, std::vector<std::vector<char>> &x, 
 	size_t LR_len, std::vector<char> &y, int M, int N, int iteration, int regularization)
 {
@@ -3277,6 +3417,199 @@ double Bbfunc::VCFChunkLoader_LR(std::string chrom, std::string nation,
 }
 
 
+void PCA_getNormalizedData(int row, int column, std::vector<std::vector<double>> &x)
+{
+	double ave = 0.0, SD = 0.0;
+  
+	for(int i = 0; i < row; i++)
+	{
+		ave = 0.0, SD = 0.0;
+    
+		for(int j = 0; j < column; j++)
+		{
+			ave += x[i][j];
+		}
+		
+		ave /= column;
+
+
+		for(int j = 0; j < column; j++)
+		{
+			SD += (x[i][j] - ave) * (x[i][j] - ave);
+		}
+
+		SD = sqrt(SD / column);
+
+    
+		for(int j = 0; j < column; j++)
+		{
+			x[i][j] = (x[i][j] - ave) / SD;
+		}
+	}
+
+	return;
+}
+
+
+
+void PCA_getCovarianceMatrix(int row, int column, std::vector<std::vector<double>> &x,
+	std::vector<std::vector<double>> &covariance)
+{
+	for(int i = 0; i < row; i++)
+	{
+		for(int j = i; j < column; j++)
+		{
+			for(int k = 0; k < row; k++)
+			{
+				covariance[i][j] += x[i][k] * x[j][k];
+    		}
+		}
+
+    
+		for(int j = i; j < column; j++)
+		{
+			covariance[i][j] /= (row - 1);
+      
+			if(j != i) covariance[j][i] = covariance[i][j];
+		}
+	}
+
+	return;
+}
+
+
+
+void PCA_getEigenVector(std::vector<std::vector<double>> &A, 
+	std::vector<std::vector<double>> &eigenvector, int n_component,
+	const double thres)
+{
+	// Initialization.
+	const int N = (int)A[0].size();
+  
+	std::vector<double> y(N, 0);
+	int count;
+	double eigenvalue, prv_eigenvalue;
+	bool itrFlag;
+
+	// verify passed vector
+	if(N * N == A.size())
+	{
+		throw std::string("Failed to extract SNP matrix in valid format for PCA.");
+	}
+	
+	if(eigenvector[0].size() * n_component == eigenvector.size())
+	{
+		throw std::string("Failed to generate eigenvector in PCA function.");
+	}
+
+
+	for(int itr = 0; itr < n_component; itr++)
+	{
+		// Initialization.
+		count = 0;
+		itrFlag = true;
+		eigenvalue = 0.0;
+
+
+		while(itrFlag == true)
+		{
+			prv_eigenvalue = eigenvalue;
+			eigenvalue = 0.0;
+      
+			for(int i = 0; i < N; i++)
+			{
+				y[i] = 0;
+		
+				// y = Ax (x convergence to eigenvalue)
+				for(int j = 0; j < N; j++)
+				{
+					y[i] += A[i][j] * eigenvector[itr][j];
+				}
+
+				if(i == 0)  eigenvalue  = y[i] * eigenvector[itr][i];
+				else        eigenvalue += y[i] * eigenvector[itr][i];
+			}
+
+			if(fabs(eigenvalue - prv_eigenvalue) < thres) itrFlag = false;
+		  
+		  
+			if(itrFlag)
+			{
+				double length = 0.0;
+			
+				for(int j = 0; j < N; j++)
+				{
+					eigenvector[itr][j] = y[j];
+					length += eigenvector[itr][j] * eigenvector[itr][j];
+				}
+
+				length = sqrt(length);
+		
+				for(int j = 0; j < N; j++)
+				{
+					eigenvector[itr][j] /= length;
+				}
+		
+				count++;
+			}
+		}
+
+
+		// Update A
+		for(int i = 0; i < N; i++)
+		{
+			for(int j = 0; j < N; j++)
+			{
+				A[i][j] -= eigenvalue * eigenvector[itr][i] * eigenvector[itr][j];
+			}
+		
+		}
+		
+		// string EigenCheck = "calculate " + to_string(count) + " times to solve EigenProblem. Eigenvalue: " + to_string(eigenvalue);
+		// OCALL_print(EigenCheck.c_str());
+	}
+
+	std::vector<double>().swap(y);  // std::vector のメモリ解放．
+	return;
+}
+
+
+// reduce original data to <n_component> dim(s)
+void PCA_ReduceDimension(int row, int column, std::vector<std::vector<double>> &x,
+	std::vector<std::vector<double>> &eigenvector, double *reduced, int n_component)
+{
+	std::vector<std::vector<double>> tmp(row, std::vector<double>(n_component, 0.0));
+
+	for(int i = 0; i < row; i++)
+	{
+		for(int k = 0; k < column; k++)
+		{
+			for(int j = 0; j < n_component; j++)
+			{
+				tmp[i][j] += x[k][i] * eigenvector[j][k];
+    		}
+		}
+	}
+
+	for(int i = 0; i < row; i++)
+	{
+		for(int j = 0; j < n_component; j++)
+		{
+			reduced[n_component*i + j] = 0.0;
+      
+			for(int k = 0; k < column; k++)
+			{
+				reduced[n_component*i + j] += tmp[i][j] * eigenvector[j][k];
+    		}
+		}
+	}
+
+	std::vector<std::vector<double>>().swap(tmp);  // destruct vector
+  
+	return;
+}
+
+
 
 double Bbfunc::VCFChunkLoader_PCA(std::string chrom, std::string nation, 
 	std::string disease_type, std::string &query)
@@ -3371,10 +3704,10 @@ double Bbfunc::VCFChunkLoader_PCA(std::string chrom, std::string nation,
 
 	
 	/* parse nation list */
+	/*
 	std::vector<std::string> nation_list;
 
 	char *nation_token = strtok((char*)nation.c_str(), ";");
-
 
 	do
 	{
@@ -3382,10 +3715,11 @@ double Bbfunc::VCFChunkLoader_PCA(std::string chrom, std::string nation,
 	}
 	while ((nation_token = strtok(NULL, ";"))!= NULL);
 
-	if(nation_list.size() < 2)
+	if(nation_list.size() != 1)
 	{
-		throw std::string("2 or more nations must be designated.");
+		throw std::string("Only 1 nation can be designated in PCA function.");
 	}
+	*/
 
 
 	/* calculate entire size of filenames matching with conditions */
@@ -3514,25 +3848,19 @@ double Bbfunc::VCFChunkLoader_PCA(std::string chrom, std::string nation,
 
 
 	/* declare vector for contingency table */
-	std::vector<std::vector<char>> snp_vec;
+	std::vector<std::vector<double>> snp_vec;
 
 	/*
-	 * ------------------ vector design for LR --------------------
+	 * ------------------ vector design for PCA -------------------
 	 * snp_vec[position][registered_user];
 	 * 
-	 * first line (i.e. snp_vec[0][i]) must be flushed with 1,
-	 * therefore loaded data will be stored in snp_vec[>1][i].
+	 * Contrary to LR, first line (i.e. snp_vec[0][i]) must NOT be 
+	 * flushed with 1, therefore loaded data will be stored 
+	 * in snp_vec[>=0][i].
 	 * ------------------------------------------------------------
 	 */
 
-	/* 
-	 * for 1-flushed line. this line will be processed 
-	 * after loading entire VCF.
-	 */
-
-	snp_vec.emplace_back();
 	
-
 	for(int i = 0; i < query_size; i++)
 	{
 		snp_vec.emplace_back();
@@ -3553,6 +3881,14 @@ double Bbfunc::VCFChunkLoader_PCA(std::string chrom, std::string nation,
 				match_flag = 1;
 				match_index++;
 			}
+			else
+			{
+				continue;
+			}
+		}
+		else
+		{
+			continue;
 		}
 
 
@@ -3798,8 +4134,10 @@ double Bbfunc::VCFChunkLoader_PCA(std::string chrom, std::string nation,
 			 * if you USE SEALING, this implementation must be far more complicated.
 			 */
 			
-			//final_ret = VCFParser_LR(plain_vcf, snp_vec, chrom,
-			//	pos_query, pos_index, match_flag);
+			
+			final_ret = VCFParser_PCA(plain_vcf, snp_vec, chrom,
+				pos_query, pos_index, match_flag);
+			
 
 			/* increment position index */
 			//pos_index++;
@@ -3824,6 +4162,95 @@ double Bbfunc::VCFChunkLoader_PCA(std::string chrom, std::string nation,
 		delete(tag_array);
 
 	}
+
+	std::vector<bool> found_flags(snp_vec.size(), true);
+
+	/* check undetected positions in query */
+	for(int i = 0; i < snp_vec.size(); i++)
+	{
+		if(snp_vec[i].size() == 0)
+		{
+			found_flags[i] = false;
+		}
+	}
+
+	auto sv_itr = snp_vec.begin();
+
+
+	/* delete factors which size is 0 */
+	while(sv_itr != snp_vec.end())
+	{
+		if((*sv_itr).size() == 0)
+		{
+			sv_itr = snp_vec.erase(sv_itr);
+		}
+		else
+		{
+			sv_itr++;
+		}
+	}
+
+	/* need to edit query vector here */
+
+
+	/* start computing PCA*/
+	static const double thres = 1e-6;
+	int n_component = 10;
+
+	int sv_height = snp_vec.size(); // N
+	int sv_width = snp_vec[0].size(); // M
+
+	double *PCA_data = new double[sv_width * n_component]();
+
+
+	OCALL_print("A");
+	PCA_getNormalizedData(sv_height, sv_width, snp_vec);
+	OCALL_print("A");
+
+
+	std::vector<std::vector<double>> covariance(sv_height,
+		std::vector<double>(sv_height, 0.0));
+	
+	PCA_getCovarianceMatrix(sv_width, sv_height, snp_vec, covariance);
+	OCALL_print("A");
+
+
+	std::vector<std::vector<double>> eigenvector(n_component, 
+		std::vector<double>(sv_height, 1/sqrt((double)sv_height)));
+
+	PCA_getEigenVector(covariance, eigenvector, n_component, thres);
+	OCALL_print("A");
+	std::vector<std::vector<double>>().swap(covariance);
+
+
+
+	PCA_ReduceDimension(sv_width, sv_height, snp_vec, 
+		eigenvector, PCA_data, n_component);
+	OCALL_print("A");
+	std::vector<std::vector<double>>().swap(eigenvector);
+
+
+	int width_count = 0;
+
+	for(int i = 0; i < sv_width * n_component; i++)
+	{
+		Bmain::result_str += std::to_string(PCA_data[i]);
+		Bmain::result_str += ";";
+
+		width_count++;
+
+		if(width_count >= n_component)
+		{
+			Bmain::result_str.pop_back();
+			Bmain::result_str += "\n";
+
+			width_count = 0;
+		}
+	}
+
+
+	delete(PCA_data);
+	std::vector<std::vector<double>>().swap(snp_vec);
 
 	return 0.0;
 }

@@ -71,6 +71,8 @@ using namespace std;
 #define strdup(x) _strdup(x)
 #endif
 
+#define DIV_UNIT 20000000
+#define CHUNK_SIZE 20000000
 #define ROUND_UNIT 100000000
 
 static const unsigned char def_service_private_key[32] = {
@@ -778,7 +780,11 @@ int main(int argc, char *argv[])
 
             uint8_t *sp_key = session.sk;
 
-			if(datatype == "vcf")
+			if(datatype == "inquiry")
+			{
+				cout << "Waiting for response from ISV...\n" << endl;
+			}
+			else if(datatype == "vcf")
             {
                 /* process VCF file to send */
                 int div_total = 0;
@@ -804,28 +810,32 @@ int main(int argc, char *argv[])
 					vcf_ifs.open(vcf_filename, ios::in);
 				}
 
-				size_t divnum = 0;
+				/* DIV_UNIT is defined at upper side of this src. */
+				size_t est_divnum = 0;
 				vcf_ifs.seekg(0, ios::end);
-				divnum = vcf_ifs.tellg();
+				est_divnum = vcf_ifs.tellg();
 				vcf_ifs.seekg(0, ios::beg);
 
-				if(divnum % 20000000 != 0)
+				if(est_divnum % DIV_UNIT != 0)
 				{
-					divnum /= 20000000;
-					divnum += 1;
+					est_divnum /= DIV_UNIT;
+					est_divnum += 1;
 				}
 				else
 				{
-					divnum /= 20000000;
+					est_divnum /= DIV_UNIT;
 				}
 
 
-				iv_array = new uint8_t[12 * divnum]();
-				tag_array = new uint8_t[16 * divnum]();
+				iv_array = new uint8_t[12 * est_divnum]();
+				tag_array = new uint8_t[16 * est_divnum]();
 
+				size_t divnum = 0;
 
                 div_total = process_vcf(&tar_filename, &access_list, 
 					sp_key, iv_array, tag_array, &vcf_ifs);
+
+				divnum = div_total;
 
 
 				/* remove temporary directory */
@@ -1129,7 +1139,8 @@ int main(int argc, char *argv[])
 				sp_iv = generate_nonce(12);
 
 				/*AES/GCM's cipher length is equal to the length of plain text*/
-				ciphertext_len = encrypt_data_for_ISV(intp_plain, strlen((char*)intp_plain), sp_key, sp_iv, intp_cipher, tag);
+				ciphertext_len = encrypt_data_for_ISV(intp_plain, strlen((char*)intp_plain), 
+					sp_key, sp_iv, intp_cipher, tag);
 
 				if(ciphertext_len == -1)
 				{
@@ -2658,16 +2669,24 @@ int send_login_info(MsgIO *msgio, ra_session_t session,
 		getline(fin_login, tmp);
 
 		if(tmp != "integer" && tmp != "genome" && tmp != "FASTA"
-			&& tmp != "vcf")
+			&& tmp != "vcf" && tmp != "inquiry" && tmp != "download")
 		{
 			cerr << "Datatype must be designated only by following: " << endl;
-			cout << "integer, genome, FASTA, vcf" << endl;
+			cout << "integer, genome, FASTA, vcf, inquiry, download" << endl;
 			cout << "tmp: " << tmp << endl;
 			exit(1);
 		}
 
 		*datatype += tmp;
 		login_info += tmp;
+
+		if(*datatype == "download")
+		{
+			login_info += "\n";
+			getline(fin_login, tmp);
+			login_info += tmp;
+		}
+
 		mode_flag = 0;
 	}
 
@@ -2810,19 +2829,19 @@ int send_login_info(MsgIO *msgio, ra_session_t session,
 int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key, 
 	uint8_t *iv_array, uint8_t *tag_array, ifstream *vcf_ifs)
 {
-    size_t divnum = 0;
+    size_t est_divnum = 0;
     vcf_ifs->seekg(0, ios::end);
-    divnum = vcf_ifs->tellg();
+    est_divnum = vcf_ifs->tellg();
     vcf_ifs->seekg(0, ios::beg);
 
-    if(divnum % 20000000 != 0)
+    if(est_divnum % DIV_UNIT != 0)
     {
-        divnum /= 20000000;
-        divnum += 1;
+        est_divnum /= DIV_UNIT;
+        est_divnum += 1;
     }
     else
     {
-        divnum /= 20000000;
+        est_divnum /= DIV_UNIT;
     }
 
     /* randomly generate filename for tarball */
@@ -2858,8 +2877,20 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key,
         divided_vcf += vcf_line + '\n';
         part_size += vcf_line.length() + 1;
 
-        if(part_size > 20000000)
+        if(part_size > DIV_UNIT)
 		{
+			/* align divided_vcf's size to CHUNK_SIZE byte */
+			/*
+				size_t pas_sz = CHUNK_SIZE - part_size;
+
+				divided_vcf += "\n";
+
+				for(int i = 0; i < pad_sz - 1; i++)
+				{
+					divided_vcf += "#";
+				}
+			
+			*/
             uint8_t *iv_temp = new uint8_t[12]();
             uint8_t *tag_temp = new uint8_t[16]();
             uint8_t *vcf_cipher = new uint8_t[30000000]();
@@ -2925,6 +2956,19 @@ int process_vcf(string *tar_filename, string *access_list, uint8_t *sp_key,
     uint8_t *tag_temp = new uint8_t[16]();
     uint8_t *vcf_cipher = new uint8_t[30000000]();
     int vcf_cipher_len = 0;
+
+	/* align divided_vcf's size to CHUNK_SIZE byte */
+	/*
+		size_t pad_sz = CHUNK_SIZE - part_size;
+
+		divided_vcf += "\n";
+
+		for(int i = 0; i < pad_sz; i++)
+		{
+			divided_vcf += "#";
+		}
+	*/
+	
 
     iv_temp = generate_nonce(12);
 
