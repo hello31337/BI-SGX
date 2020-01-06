@@ -151,12 +151,15 @@ Firstly, you have to prepare login context as `login.ini`. Username, password, a
 testuser # username 
 testpass12345 # password
 O # authority type. "O" for data owner and "R" for researcher.
+FASTA # option. designate data type of data to upload or designate other processes to require.
 ```
 
 Secondly, you have to prepare data to store to cloud server.
 Currently 2 data types are acceptable; One is to be set of `int` or `double`, and another is to be set of `char`. The separator must be newline (`\n`).
 
 After completing remote attestation, you will be required to input filename of dataset. Then cloud DB storing will be executed and the result status will be returned from cloud server.
+
+For more detailed usage, please see at [BI-SGX's wiki](https://github.com/hello31337/BI-SGX/wiki).
 
 #### If you are researcher (use interpreter feature)
 Firstly, you have to prepare `login.ini` as with the case of data owner.
@@ -176,7 +179,7 @@ See at [BI-SGX's wiki](https://github.com/hello31337/BI-SGX/wiki) for interprete
 * Interpreter which runs inside enclave
 
 ## TODO
-* Implement more built-in functions for interpreter
+* Adopt more effective algorithms for processing internal tables and internal codes in interpreter.
 
 ## LICENSE
 All of these codes are developed and distributed under Intel Sample Source Code license. See the LICENSE file for detail.
