@@ -55,6 +55,7 @@ using namespace std;
 #endif
 #include <sgx_uae_service.h>
 #include <sgx_ukey_exchange.h>
+#include <sgx_uswitchless.h>
 #include <string>
 #include "common.h"
 #include "protocol.h"
@@ -2072,12 +2073,55 @@ int main (int argc, char *argv[])
 				dl_iv, dl_tag, &dl_sz);
 
 
-			/* unseal and re-encrypt for TLS transfer */
-			/*
-			 * you must pass the cipher of login info and its contexts 
-			 * to verify the integrity of user information.
-			 */
+			/* encode ciphers to base64 */
+			uint8_t *dl_data_b64 = new uint8_t[dl_sz * 2]();
+			uint8_t *dl_iv_b64 = new uint8_t[64]();
+			uint8_t *dl_tag_b64 = new uint8_t[64]();
+			uint8_t *dl_sz_b64 = new uint8_t[128]();
 
+			size_t dl_data_b64_len;
+			size_t dl_iv_b64_len;
+			size_t dl_tag_b64_len;
+			size_t dl_sz_b64_len;
+
+
+			/* encode each contexts */
+			dl_data_b64_len = base64_encrypt(dl_data, dl_sz, dl_data_b64, dl_sz * 2);
+			dl_iv_b64_len = base64_encrypt(dl_iv, 12, dl_iv_b64, 64);
+			dl_tag_b64_len = base64_encrypt(dl_tag, 16, dl_tag_b64, 64);
+
+			uint8_t *dl_sz_tmp = (uint8_t*)to_string(dl_sz).c_str();
+
+			dl_sz_b64_len = base64_encrypt(dl_sz_tmp, strlen((char*)dl_sz_tmp),
+				dl_sz_b64, 128);
+
+
+			
+			/* send data for download to sp */
+			cout << "\nSend download data to SP..." << endl;
+
+			msgio->send(dl_data_b64, dl_data_b64_len);
+			usleep(250000);
+			msgio->send(dl_iv_b64, dl_iv_b64_len);
+			usleep(250000);
+			msgio->send(dl_tag_b64, dl_tag_b64_len);
+			usleep(250000);
+			msgio->send(dl_sz_b64, dl_sz_b64_len);
+			
+			cout << "\nSent data to SP successfully.\n";
+
+			/*
+			delete dl_data;
+			delete dl_iv;
+			delete dl_tag;
+			delete sealed_b64;
+			delete sealed_binary;
+			delete dl_data_b64;
+			delete dl_iv_b64;
+			delete dl_tag_b64;
+			delete dl_sz_tmp;
+			delete dl_sz_b64;
+			*/
 		}
 		else if(datatype == "vcf")
 		{
@@ -2709,7 +2753,6 @@ int main (int argc, char *argv[])
 
 				try
 				{
-					OCALL_chrono_start();
 					ecall_status = seal_data(eid, &retval, g_ra_ctx, cipher_to_enclave, 
 					(size_t)deflen, iv_to_enclave, tag_to_enclave, result_cipher,
 					cipherlen + 1000, &result_len);
@@ -2731,8 +2774,6 @@ int main (int argc, char *argv[])
 					string string_to_store(reinterpret_cast<char*>(b64_to_store));
 
 					bdb.storeDB(string_to_store, datatype, result_len);
-		
-					OCALL_chrono_end();
 
 				}
 				catch(sql::SQLException &e)
