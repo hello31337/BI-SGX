@@ -54,6 +54,9 @@ using namespace std;
 #include <unistd.h>
 #endif
 #include <sgx_uae_service.h>
+#include <sgx_uae_launch.h>
+#include <sgx_uae_epid.h>
+#include <sgx_uae_quote_ex.h>
 #include <sgx_ukey_exchange.h>
 #include <sgx_uswitchless.h>
 #include <string>
@@ -118,6 +121,16 @@ sgx_status_t sgx_create_enclave_search (
 	sgx_enclave_id_t *eid,
 	sgx_misc_attribute_t *attr
 );
+
+sgx_status_t sgx_create_enclave_search_ex (
+	const char *filename,
+	const int edebug,
+	sgx_launch_token_t *token,
+	int *updated,
+	sgx_enclave_id_t *eid,
+	sgx_misc_attribute_t *attr
+);
+
 
 void usage();
 int do_quote(sgx_enclave_id_t eid, config_t *config);
@@ -1872,8 +1885,15 @@ int main (int argc, char *argv[])
 		return 1;
 	}
 #else
+
 	status = sgx_create_enclave_search(ENCLAVE_NAME,
 		SGX_DEBUG_FLAG, &token, &updated, &eid, 0);
+	
+	/*
+	status = sgx_create_enclave_search_ex(ENCLAVE_NAME,
+		SGX_DEBUG_FLAG, &token, &updated, &eid, 0);
+	*/
+
 	if ( status != SGX_SUCCESS ) {
 		fprintf(stderr, "sgx_create_enclave: %s: %08x\n",
 			ENCLAVE_NAME, status);
@@ -3393,7 +3413,7 @@ int do_quote(sgx_enclave_id_t eid, config_t *config)
 	uint32_t sz= 0;
 	uint32_t flags= config->flags;
 	sgx_quote_sign_type_t linkable= SGX_UNLINKABLE_SIGNATURE;
-	sgx_ps_cap_t ps_cap;
+	//sgx_ps_cap_t ps_cap;
 	char *pse_manifest = NULL;
 	size_t pse_manifest_sz;
 #ifdef _WIN32
@@ -3409,6 +3429,7 @@ int do_quote(sgx_enclave_id_t eid, config_t *config)
  	if (OPT_ISSET(flags, OPT_LINK)) linkable= SGX_LINKABLE_SIGNATURE;
 
 	/* Platform services info */
+	/*
 	if (OPT_ISSET(flags, OPT_PSE)) {
 		status = sgx_get_ps_cap(&ps_cap);
 		if (status != SGX_SUCCESS) {
@@ -3437,6 +3458,7 @@ int do_quote(sgx_enclave_id_t eid, config_t *config)
 			return 1;
 		}
 	}
+	*/
 
 	/* Get our quote */
 
@@ -3621,6 +3643,62 @@ sgx_status_t sgx_create_enclave_search (const char *filename, const int edebug,
 
 	return sgx_create_enclave(filename, edebug, token, updated, eid, attr);
 }
+
+sgx_status_t sgx_create_enclave_search_ex (const char *filename, const int edebug,
+	sgx_launch_token_t *token, int *updated, sgx_enclave_id_t *eid,
+	sgx_misc_attribute_t *attr)
+{
+	struct stat sb;
+	char epath[PATH_MAX];	/* includes NULL */
+
+	sgx_uswitchless_config_t us_config = {0, 1, 1, 20000, 20000, {0}};
+	void* enclave_ex_p[32] = {0};
+
+	enclave_ex_p[SGX_CREATE_ENCLAVE_EX_SWITCHLESS_BIT_IDX] = &us_config;
+
+	/* Is filename an absolute path? */
+
+	if ( filename[0] == '/' ) 
+		return sgx_create_enclave_ex(filename, edebug, token, updated, eid, attr,
+			SGX_CREATE_ENCLAVE_EX_SWITCHLESS, (const void**)enclave_ex_p);
+
+	/* Is the enclave in the current working directory? */
+
+	if ( stat(filename, &sb) == 0 )
+		return sgx_create_enclave_ex(filename, edebug, token, updated, eid, attr,
+			SGX_CREATE_ENCLAVE_EX_SWITCHLESS, (const void**)enclave_ex_p);
+
+	/* Search the paths in LD_LBRARY_PATH */
+
+	if ( file_in_searchpath(filename, getenv("LD_LIBRARY_PATH"), epath, PATH_MAX) )
+		return sgx_create_enclave_ex(epath, edebug, token, updated, eid, attr,
+			SGX_CREATE_ENCLAVE_EX_SWITCHLESS, (const void**)enclave_ex_p);
+		
+	/* Search the paths in DT_RUNPATH */
+
+	if ( file_in_searchpath(filename, getenv("DT_RUNPATH"), epath, PATH_MAX) )
+		return sgx_create_enclave_ex(epath, edebug, token, updated, eid, attr,
+			SGX_CREATE_ENCLAVE_EX_SWITCHLESS, (const void**)enclave_ex_p);
+
+	/* Standard system library paths */
+
+	if ( file_in_searchpath(filename, DEF_LIB_SEARCHPATH, epath, PATH_MAX) )
+		return sgx_create_enclave_ex(epath, edebug, token, updated, eid, attr,
+			SGX_CREATE_ENCLAVE_EX_SWITCHLESS, (const void**)enclave_ex_p);
+
+	/*
+	 * If we've made it this far then we don't know where else to look.
+	 * Just call sgx_create_enclave() which assumes the enclave is in
+	 * the current working directory. This is almost guaranteed to fail,
+	 * but it will insure we are consistent about the error codes that
+	 * get reported to the calling function.
+	 */
+
+	return sgx_create_enclave_ex(filename, edebug, token, updated, eid, attr,
+		SGX_CREATE_ENCLAVE_EX_SWITCHLESS, (const void**)enclave_ex_p);;
+}
+
+
 
 int file_in_searchpath (const char *file, const char *search, char *fullpath, 
 	size_t len)

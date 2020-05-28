@@ -34,9 +34,10 @@ enclave {
 		public sgx_status_t get_report([out] sgx_report_t *report,
 			[in] sgx_target_info_t *target_info);
 
+		/*
 		public size_t get_pse_manifest_size();
-
 		public sgx_status_t get_pse_manifest([out, count=sz] char *buf, size_t sz);
+		*/
 
 		public sgx_status_t enclave_ra_init(sgx_ec256_public_t key, int b_pse,
 			[out] sgx_ra_context_t *ctx, [out] sgx_status_t *pse_status);
@@ -64,7 +65,8 @@ enclave {
 			[in, out, size=32]uint8_t *username,
 			[in, out, size=33]uint8_t *password_hash,
 			[in, out, size=2]uint8_t *privilege,
-			[in, out, size=8]uint8_t *datatype);
+			[in, out, size=32]uint8_t *datatype,
+			[in, out, size=128]uint8_t *misc_info);
 
 		public sgx_status_t seal_data(sgx_ra_context_t context,
 			[user_check]uint8_t *data_cipher, size_t cipherlen,
@@ -96,6 +98,19 @@ enclave {
 			[in, size=taglen]uint8_t *tag_array, size_t taglen, 
 			[out, size=emsg_len]uint8_t *error_msg_cipher, size_t emsg_len,
 			[out]size_t *emsg_cipher_len);
+
+		public sgx_status_t encrypt_for_TLS(sgx_ra_context_t context,
+			[in, size=plain_len]uint8_t *plain, size_t plain_len,
+			[in, out, size=plain_len]uint8_t *cipher,
+			[in, out, size=12]uint8_t *iv, [in, out, size=16]uint8_t *tag);
+		
+		public sgx_status_t process_data_for_dl(sgx_ra_context_t context,
+			[in, size=login_sz]uint8_t *login_info, size_t login_sz,
+			[in, size=12]uint8_t *login_iv, [in, size=16]uint8_t *login_tag,
+			[in, out, size=sealed_sz]uint8_t *sealed_binary, size_t sealed_sz,
+			[in, out, size=sealed_sz]uint8_t *dl_data,
+			[in, out, size=12]uint8_t *dl_iv,
+			[in, out, size=16]uint8_t *dl_tag, [out]size_t *dl_sz);
 	};
 
 	untrusted {

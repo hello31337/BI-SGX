@@ -505,6 +505,7 @@ int sgx_thread_wait_untrusted_event_ocall(const void *self)
 	return (int) p_sgx_thread_wait_untrusted_event_ocall(self);
 }
 
+/*
 sgx_status_t sgx_get_ps_cap(sgx_ps_cap_t *p_sgx_ps_cap)
 {
 	if ( l_sgx_get_ps_cap == 0 ) {
@@ -516,6 +517,7 @@ sgx_status_t sgx_get_ps_cap(sgx_ps_cap_t *p_sgx_ps_cap)
 
 	return (sgx_status_t) p_sgx_get_ps_cap(p_sgx_ps_cap);
 }
+*/
 
 sgx_status_t sgx_ecall_switchless(const sgx_enclave_id_t eid, const int index, const void *ocall_table, void *ms)
 {
