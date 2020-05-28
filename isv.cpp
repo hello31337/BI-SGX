@@ -3651,7 +3651,7 @@ sgx_status_t sgx_create_enclave_search_ex (const char *filename, const int edebu
 	struct stat sb;
 	char epath[PATH_MAX];	/* includes NULL */
 
-	sgx_uswitchless_config_t us_config = {0, 1, 1, 20000, 20000, {0}};
+	sgx_uswitchless_config_t us_config = SGX_USWITCHLESS_CONFIG_INITIALIZER;
 	void* enclave_ex_p[32] = {0};
 
 	enclave_ex_p[SGX_CREATE_ENCLAVE_EX_SWITCHLESS_BIT_IDX] = &us_config;

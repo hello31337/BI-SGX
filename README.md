@@ -26,7 +26,7 @@ Contrary to Intel's original RA sample, these codes are developed for Linux plat
   * Ubuntu 18.04 LTS (64-bit)
 
 * Ensure that you have built and installed the Intel SGX packages (Both of these must be SGX 2.x version):
-  * [Intel SGX Software Development Kit and Platform Software package for Linux](https://github.com/intel/linux-sgx)
+  * [Intel SGX Software Development Kit and Platform Software package for Linux](https://github.com/intel/linux-sgx). **You must install SGXSDK since version is 2.8**
   * [Intel SGX Driver for Linux](https://github.com/intel/linux-sgx-driver)
 
 * Ensure that you have installed MySQL and MySQL Connector/C++.
