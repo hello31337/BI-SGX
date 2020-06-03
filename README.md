@@ -1,10 +1,10 @@
 # BI-SGX : Bioinformatic Interpreter on SGX-based Secure Computing Cloud
 
-https://img.shields.io/github/v/release/hello31337/BI-SGX
-https://img.shields.io/badge/SGXSDK-v2.9.1-informational.svg
-https://img.shields.io/github/issues/hello31337/BI-SGX
-https://img.shields.io/github/commits-since/hello31337/BI-SGX/latest
-https://img.shields.io/github/last-commit/hello31337/BI-SGX
+![release](https://img.shields.io/github/v/release/hello31337/BI-SGX)
+![SGXSDK-version](https://img.shields.io/badge/SGXSDK-v2.9.1-informational.svg)
+![issues](https://img.shields.io/github/issues/hello31337/BI-SGX)
+![commits](https://img.shields.io/github/commits-since/hello31337/BI-SGX/latest)
+![last-commit](https://img.shields.io/github/last-commit/hello31337/BI-SGX)
 
 
 ## Introduction
