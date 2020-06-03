@@ -1,5 +1,12 @@
 # BI-SGX : Bioinformatic Interpreter on SGX-based Secure Computing Cloud
 
+https://img.shields.io/github/v/release/hello31337/BI-SGX
+https://img.shields.io/badge/SGXSDK-v2.9.1-informational.svg
+https://img.shields.io/github/issues/hello31337/BI-SGX
+https://img.shields.io/github/commits-since/hello31337/BI-SGX/latest
+https://img.shields.io/github/last-commit/hello31337/BI-SGX
+
+
 ## Introduction
 These codes are interpreter which uses Intel(R) SGX's protection features and specializes for bioinformatical computations. The basical framework of these codes are heavily based on [Intel(R) Software Guard Extensions (SGX) Remote Attestation End-to-End Sample](https://github.com/intel/sgx-ra-sample).
 
@@ -180,6 +187,9 @@ See at [BI-SGX's wiki](https://github.com/hello31337/BI-SGX/wiki) for interprete
 
 ## TODO
 * Adopt more effective algorithms for processing internal tables and internal codes in interpreter.
+
+## Website
+[bi-sgx.net](https://bi-sgx.net)
 
 ## LICENSE
 All of these codes are developed and distributed under Intel Sample Source Code license. See the LICENSE file for detail.
